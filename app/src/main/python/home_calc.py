@@ -134,8 +134,15 @@ def compute_home_status():
         trow = conn.execute('SELECT steps FROM daily_steps WHERE date=?', (today,)).fetchone()
         today_steps = int(trow['steps']) if trow and trow['steps'] else 0
 
-        # Left number: every step ever recorded in the app.
-        rec = conn.execute('SELECT COALESCE(SUM(steps), 0) AS s FROM daily_steps').fetchone()
+        # Left number: steps recorded from the starting date onward (the journey
+        # that this goal is measured against — not any pre-start history).
+        if starting_date:
+            rec = conn.execute(
+                'SELECT COALESCE(SUM(steps), 0) AS s FROM daily_steps WHERE date >= ?',
+                (starting_date,)
+            ).fetchone()
+        else:
+            rec = conn.execute('SELECT COALESCE(SUM(steps), 0) AS s FROM daily_steps').fetchone()
         total_recorded = int(rec['s']) if rec and rec['s'] is not None else 0
 
         # Right number: the whole-journey goal — steps to get from the day-one
