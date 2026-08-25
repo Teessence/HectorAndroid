@@ -83,6 +83,20 @@
   .ts-dropdown .option, .ts-dropdown .optgroup-header { color: var(--hx-text) !important; }
   .ts-dropdown .optgroup-header { background: var(--hx-panel2) !important; color: #8b949e !important; text-transform: uppercase; letter-spacing: .06em; font-size: .72rem; }
   .ts-dropdown .active { background: #1f6feb !important; color: #fff !important; }
+
+  /* Mobile: the meal header is a single justify-between flex row (meal name +
+     note on the left, macro totals + Save-as-recipe on the right). On narrow
+     screens those two halves collide, so stack them vertically instead and let
+     each half take the full width. */
+  @media (max-width: 991.98px) {
+    .slot-header {
+      flex-direction: column;
+      align-items: stretch !important;
+      gap: .45rem;
+    }
+    .slot-header > span { width: 100%; }
+    .slot-header .slot-note-input { max-width: none !important; }
+  }
 </style>
 
 {# ── Date navigation ── #}

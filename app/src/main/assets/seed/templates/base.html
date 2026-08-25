@@ -106,7 +106,7 @@
        only horizontal scrolling for the wide tables). */
     @media (max-width: 991.98px) {
       .ing-table-scroll, .meal-table-scroll, .inv-table-scroll,
-      .steps-table-scroll, .hydration-table-scroll {
+      .steps-table-scroll, .hydration-table-scroll, #forecast-scroll {
         max-height: none !important;
         overflow-y: visible !important;
         overflow-x: auto !important;
@@ -225,6 +225,28 @@
   } else {
     bind();
   }
+})();
+</script>
+
+<script>
+// Keep the horizontal scroll position of list tables across a sort/reload, so
+// sorting a far-right column doesn't snap the view back to the first column.
+(function () {
+  var el = document.querySelector(
+    '.ing-table-scroll, .meal-table-scroll, .inv-table-scroll, ' +
+    '.steps-table-scroll, .hydration-table-scroll');
+  if (!el) return;
+  var key = 'hx-scrollLeft:' + location.pathname;
+  var saved = sessionStorage.getItem(key);
+  if (saved) el.scrollLeft = parseInt(saved, 10) || 0;
+  var t;
+  el.addEventListener('scroll', function () {
+    clearTimeout(t);
+    t = setTimeout(function () { sessionStorage.setItem(key, el.scrollLeft); }, 150);
+  });
+  window.addEventListener('beforeunload', function () {
+    sessionStorage.setItem(key, el.scrollLeft);
+  });
 })();
 </script>
 {% block scripts %}{% endblock %}
