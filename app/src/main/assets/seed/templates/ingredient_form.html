@@ -1,0 +1,262 @@
+{% extends 'base.html' %}
+{% block title %}{{ 'Edit' if ing else 'Add' }} Ingredient — Hector{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-8">
+    <div class="d-flex align-items-center gap-2 mb-3">
+      <a href="/ingredients" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i></a>
+      <h4 class="fw-bold mb-0">{{ 'Edit' if ing else 'New' }} Ingredient</h4>
+    </div>
+
+    <form method="post" enctype="multipart/form-data" id="ingForm">
+
+      {# ── Basic Info ── #}
+      <div class="card mb-3">
+        <div class="card-body p-4">
+          <h6 class="text-secondary text-uppercase mb-3" style="font-size:.72rem;letter-spacing:.1em">Basic Info</h6>
+          <div class="row g-3 mb-3">
+            <div class="col-md-8">
+              <label class="form-label fw-semibold">Name <span class="text-danger">*</span></label>
+              <input type="text" name="name" class="form-control"
+                     value="{{ ing.name if ing else '' }}" required placeholder="e.g. Oats, Chicken Breast">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Unit <span class="text-danger">*</span></label>
+              <select name="unit" class="form-select" id="unitSelect">
+                {% for u in ['g','ml','piece','tbsp','tsp','cup','oz','serving'] %}
+                <option value="{{ u }}" {{ 'selected' if ing and ing.unit == u }}>{{ u }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Shop</label>
+              <input type="text" name="shop" class="form-control"
+                     value="{{ ing.shop if ing else '' }}" placeholder="e.g. Lidl, Kaufland, Billa">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Company / Brand</label>
+              <input type="text" name="company" class="form-control"
+                     value="{{ ing.company if ing else '' }}" placeholder="e.g. Nestle, Heinz">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {# ── Image ── #}
+      <div class="card mb-3">
+        <div class="card-body p-4">
+          <h6 class="text-secondary text-uppercase mb-3" style="font-size:.72rem;letter-spacing:.1em">Photo</h6>
+          <div class="d-flex align-items-start gap-4 flex-wrap">
+            {% if ing and ing.image_filename %}
+            <div>
+              <a href="/static/ingredient_images/{{ ing.image_filename }}" target="_blank" title="Open full size">
+                <img src="/static/ingredient_images/{{ ing.image_filename }}"
+                     id="imgPreview"
+                     style="width:120px;height:120px;object-fit:contain;border-radius:10px;border:1px solid var(--hx-border);background:var(--hx-bg);padding:4px;cursor:zoom-in">
+              </a>
+            </div>
+            <div>
+              <label class="form-label fw-semibold">Replace Photo</label>
+              <input type="file" name="image" class="form-control" accept="image/*" id="imageInput">
+              <div class="form-check mt-2">
+                <input class="form-check-input" type="checkbox" name="remove_image" value="1" id="removeImg">
+                <label class="form-check-label text-secondary" for="removeImg">Remove current photo</label>
+              </div>
+            </div>
+            {% else %}
+            <div id="imgPreviewWrap" style="display:none">
+              <a id="imgPreviewLink" href="#" target="_blank" title="Open full size">
+                <img id="imgPreview"
+                     style="width:120px;height:120px;object-fit:contain;border-radius:10px;border:1px solid var(--hx-border);background:var(--hx-bg);padding:4px;cursor:zoom-in">
+              </a>
+            </div>
+            <div>
+              <label class="form-label fw-semibold">Upload Photo</label>
+              <input type="file" name="image" class="form-control" accept="image/*" id="imageInput">
+              <div class="form-text">JPG, PNG, WebP or GIF. Optional.</div>
+            </div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
+      {# ── Packaging ── #}
+      <div class="card mb-3">
+        <div class="card-body p-4">
+          <h6 class="text-secondary text-uppercase mb-3" style="font-size:.72rem;letter-spacing:.1em">Packaging</h6>
+          <div class="row g-3">
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Serving Size</label>
+              <div class="input-group">
+                <input type="number" name="serving_size" id="servingSize" class="form-control"
+                       step="0.01" min="0.01" value="{{ ing.serving_size if ing else 100 }}" required>
+                <span class="input-group-text" id="servingUnit">{{ ing.unit if ing else 'g' }}</span>
+              </div>
+              <div class="form-text">Nutrition values are per this amount.</div>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Package Size</label>
+              <div class="input-group">
+                <input type="number" name="package_size" class="form-control"
+                       step="0.01" min="0.01" value="{{ ing.package_size if ing else 100 }}" required>
+                <span class="input-group-text" id="pkgUnit">{{ ing.unit if ing else 'g' }}</span>
+              </div>
+              <div class="form-text">Total units in one package.</div>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Package Cost (€)</label>
+              <div class="input-group">
+                <span class="input-group-text">€</span>
+                <input type="number" name="package_cost" class="form-control"
+                       step="0.01" min="0" value="{{ ing.package_cost if ing else 0 }}" required>
+              </div>
+              <div class="form-text">Price of the whole package.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {# ── Nutrition ── #}
+      <div class="card mb-3">
+        <div class="card-body p-4">
+          <h6 class="text-secondary text-uppercase mb-3" style="font-size:.72rem;letter-spacing:.1em">Nutrition</h6>
+          <div class="row g-3">
+            {% set fields = [
+              ('calories','Calories (kcal)','#79c0ff','any'),
+              ('protein','Protein (g)','#56d364','any'),
+              ('fat','Fat (g)','#ffa657','any'),
+              ('saturates','Saturates (g)','#ff7b72','any'),
+              ('carbs','Carbohydrates (g)','#e3b341','any'),
+              ('fiber','Fiber (g)','#79c0ff','any'),
+              ('sugar','Sugar (g)','#e3b341','any'),
+              ('salt','Salt (g)','#8b949e','any'),
+            ] %}
+            {% for name, label, color, step in fields %}
+            <div class="col-6 col-md-3">
+              <label class="form-label fw-semibold" style="color:{{ color }}">{{ label }}</label>
+              <input type="number" name="{{ name }}" class="form-control"
+                     step="{{ step }}" min="0"
+                     value="{{ ing[name] if ing else 0 }}">
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+
+      {# ── Vitamins ── #}
+      <div class="card mb-3">
+        <div class="card-body p-4">
+          <h6 class="text-secondary text-uppercase mb-3" style="font-size:.72rem;letter-spacing:.1em">
+            <i class="bi bi-capsule me-1"></i>Vitamins
+          </h6>
+          <div>
+            <div class="row g-3">
+              {% for fname, label, unit in [
+                ('vit_a',  'Vitamin A',       'μg'),
+                ('vit_c',  'Vitamin C',       'mg'),
+                ('vit_d',  'Vitamin D',       'μg'),
+                ('vit_e',  'Vitamin E',       'mg'),
+                ('vit_k',  'Vitamin K',       'μg'),
+                ('vit_b1', 'B1 Thiamine',     'mg'),
+                ('vit_b2', 'B2 Riboflavin',   'mg'),
+                ('vit_b3', 'B3 Niacin',       'mg'),
+                ('vit_b6', 'B6',              'mg'),
+                ('vit_b9', 'B9 Folate',       'μg'),
+                ('vit_b12','B12',             'μg'),
+              ] %}
+              <div class="col-6 col-md-3">
+                <label class="form-label fw-semibold" style="color:#bc8cff;font-size:.82rem">
+                  {{ label }} <span class="text-secondary">({{ unit }})</span>
+                </label>
+                <input type="number" name="{{ fname }}" class="form-control form-control-sm"
+                       step="any" min="0" value="{{ ing[fname] if ing else 0 }}">
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {# ── Minerals ── #}
+      <div class="card mb-3">
+        <div class="card-body p-4">
+          <h6 class="text-secondary text-uppercase mb-3" style="font-size:.72rem;letter-spacing:.1em">
+            <i class="bi bi-moisture me-1"></i>Minerals
+          </h6>
+          <div>
+            <div class="row g-3">
+              {% for fname, label, unit in [
+                ('calcium',    'Calcium',    'mg'),
+                ('iron',       'Iron',       'mg'),
+                ('magnesium',  'Magnesium',  'mg'),
+                ('phosphorus', 'Phosphorus', 'mg'),
+                ('potassium',  'Potassium',  'mg'),
+                ('zinc',       'Zinc',       'mg'),
+                ('selenium',   'Selenium',   'μg'),
+                ('iodine',     'Iodine',     'μg'),
+                ('copper',     'Copper',     'mg'),
+                ('manganese',  'Manganese',  'mg'),
+              ] %}
+              <div class="col-6 col-md-3">
+                <label class="form-label fw-semibold" style="color:#ffa657;font-size:.82rem">
+                  {{ label }} <span class="text-secondary">({{ unit }})</span>
+                </label>
+                <input type="number" name="{{ fname }}" class="form-control form-control-sm"
+                       step="any" min="0" value="{{ ing[fname] if ing else 0 }}">
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="d-flex gap-2 mb-4">
+        <button type="submit" class="btn btn-primary px-4">
+          <i class="bi bi-check-lg me-1"></i>{{ 'Save Changes' if ing else 'Create' }}
+        </button>
+        <a href="/ingredients" class="btn btn-outline-secondary px-4">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const unitSelect   = document.getElementById('unitSelect');
+const servingUnit  = document.getElementById('servingUnit');
+const pkgUnit      = document.getElementById('pkgUnit');
+
+function updateUnitLabels() {
+  const u = unitSelect.value;
+  servingUnit.textContent = u;
+  pkgUnit.textContent = u;
+}
+
+unitSelect.addEventListener('change', updateUnitLabels);
+
+// Image preview for new upload
+const imageInput = document.getElementById('imageInput');
+if (imageInput) {
+  imageInput.addEventListener('change', function() {
+    const file = this.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = e => {
+      const dataUrl = e.target.result;
+      const preview = document.getElementById('imgPreview');
+      const wrap    = document.getElementById('imgPreviewWrap');
+      const link    = document.getElementById('imgPreviewLink');
+      if (preview) {
+        preview.src = dataUrl;
+        if (link) link.href = dataUrl;
+        if (wrap) wrap.style.display = 'block';
+      }
+    };
+    reader.readAsDataURL(file);
+  });
+}
+</script>
+{% endblock %}

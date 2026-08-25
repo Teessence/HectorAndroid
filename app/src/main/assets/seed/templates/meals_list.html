@@ -1,0 +1,175 @@
+{% extends 'base.html' %}
+{% block title %}Recipes — Hector{% endblock %}
+{% block content %}
+
+<style>
+  .meal-table th,
+  .meal-table th a.sort-link {
+    text-transform: none !important;
+    letter-spacing: 0 !important;
+  }
+  /* Recipe name: wrap up to 3 lines, ellipsis after that. */
+  .meal-name-cell { white-space: normal; vertical-align: middle; }
+  .meal-name-text {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    word-break: break-word;
+    line-height: 1.2;
+  }
+  /* Scrollable table area with sticky header. */
+  .meal-table-scroll {
+    max-height: calc(100vh - 220px);
+    overflow: auto;
+  }
+  .meal-table-scroll thead th {
+    position: sticky; top: 0; z-index: 2;
+    background: var(--hx-panel);
+  }
+</style>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4 class="fw-bold mb-0"><i class="bi bi-journal-text me-2"></i>Recipes</h4>
+  <a href="/meals/add" class="btn btn-primary btn-sm">
+    <i class="bi bi-plus-lg me-1"></i>Create
+  </a>
+</div>
+
+<form class="mb-3 d-flex gap-2" method="get">
+  <input type="hidden" name="sort" value="{{ sort_col }}">
+  <input type="hidden" name="dir"  value="{{ sort_dir }}">
+  <input type="search" name="q" class="form-control form-control-sm" style="max-width:320px"
+         placeholder="Search by recipe name or ingredient…" value="{{ q }}">
+  <button class="btn btn-outline-secondary btn-sm" type="submit"><i class="bi bi-search"></i></button>
+  {% if q %}<a href="/meals" class="btn btn-outline-danger btn-sm"><i class="bi bi-x"></i></a>{% endif %}
+</form>
+
+{% macro th(col, label, title='', align='') %}
+  {% set new_dir = 'asc' if (sort_col == col and sort_dir == 'desc') else 'desc' %}
+  <th title="{{ title or label }}" style="white-space:nowrap" {% if align %}class="{{ align }}"{% endif %}>
+    <a href="?sort={{ col }}&dir={{ new_dir }}{% if q %}&q={{ q }}{% endif %}"
+       class="sort-link {{ 'active' if sort_col == col }}">
+      {{ label }}{% if sort_col == col %}<i class="bi bi-caret-{{ 'up' if sort_dir == 'asc' else 'down' }}-fill ms-1" style="font-size:.65rem"></i>{% endif %}
+    </a>
+  </th>
+{% endmacro %}
+
+{% if meals %}
+<div class="meal-table-scroll" id="mealTableScroll" style="font-size:.82rem">
+  <table class="table table-hover align-middle mb-0 meal-table">
+    <thead>
+      <tr>
+        {{ th('name', 'Recipe') }}
+        <th style="white-space:nowrap" class="text-center">Servings</th>
+        {{ th('last_eaten',  'Last Eaten',  'Most recent date this recipe was added to your diary', 'text-center') }}
+        {{ th('total_cost',  'Cost',        'Total recipe cost', 'text-center') }}
+        {# Nutrition (per serving) #}
+        {{ th('total_calories',  'Calories',      'Calories (kcal) per serving',    'text-center') }}
+        {{ th('total_protein',   'Protein',       'Protein (g) per serving',        'text-center') }}
+        {{ th('protein_per_calorie', 'Protein / Calorie', 'Protein per Calorie (g/kcal) per serving', 'text-center') }}
+        {{ th('total_fat',       'Fat',           'Fat (g) per serving',            'text-center') }}
+        {{ th('total_saturates', 'Saturates',     'Saturates (g) per serving',      'text-center') }}
+        {{ th('total_carbs',     'Carbohydrates', 'Carbohydrates (g) per serving',  'text-center') }}
+        {{ th('total_fiber',     'Fiber',         'Fiber (g) per serving',          'text-center') }}
+        {{ th('total_sugar',     'Sugar',         'Sugar (g) per serving',          'text-center') }}
+        {{ th('total_salt',      'Salt',          'Salt (g) per serving',           'text-center') }}
+        {# Vitamins #}
+        {{ th('total_vit_a',  'Vitamin A',  'Vitamin A (μg) per serving',           'text-center') }}
+        {{ th('total_vit_c',  'Vitamin C',  'Vitamin C (mg) per serving',           'text-center') }}
+        {{ th('total_vit_d',  'Vitamin D',  'Vitamin D (μg) per serving',           'text-center') }}
+        {{ th('total_vit_e',  'Vitamin E',  'Vitamin E (mg) per serving',           'text-center') }}
+        {{ th('total_vit_k',  'Vitamin K',  'Vitamin K (μg) per serving',           'text-center') }}
+        {{ th('total_vit_b1', 'Vitamin B1', 'B1 Thiamine (mg) per serving',         'text-center') }}
+        {{ th('total_vit_b2', 'Vitamin B2', 'B2 Riboflavin (mg) per serving',       'text-center') }}
+        {{ th('total_vit_b3', 'Vitamin B3', 'B3 Niacin (mg) per serving',           'text-center') }}
+        {{ th('total_vit_b6', 'Vitamin B6', 'B6 (mg) per serving',                  'text-center') }}
+        {{ th('total_vit_b9', 'Vitamin B9', 'B9 Folate (μg) per serving',           'text-center') }}
+        {{ th('total_vit_b12','Vitamin B12','B12 (μg) per serving',                 'text-center') }}
+        {# Minerals #}
+        {{ th('total_calcium',    'Calcium',    'Calcium (mg) per serving',    'text-center') }}
+        {{ th('total_iron',       'Iron',       'Iron (mg) per serving',       'text-center') }}
+        {{ th('total_magnesium',  'Magnesium',  'Magnesium (mg) per serving',  'text-center') }}
+        {{ th('total_phosphorus', 'Phosphorus', 'Phosphorus (mg) per serving', 'text-center') }}
+        {{ th('total_potassium',  'Potassium',  'Potassium (mg) per serving',  'text-center') }}
+        {{ th('total_zinc',       'Zinc',       'Zinc (mg) per serving',       'text-center') }}
+        {{ th('total_selenium',   'Selenium',   'Selenium (μg) per serving',   'text-center') }}
+        {{ th('total_iodine',     'Iodine',     'Iodine (μg) per serving',     'text-center') }}
+        {{ th('total_copper',     'Copper',     'Copper (mg) per serving',     'text-center') }}
+        {{ th('total_manganese',  'Manganese',  'Manganese (mg) per serving',  'text-center') }}
+        <th></th>
+      </tr>
+    </thead>
+    <tbody id="mealTbody">
+      {% include '_meals_rows.html' %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="text-center py-5 text-secondary">
+  <i class="bi bi-journal-text" style="font-size:3rem;opacity:.3"></i>
+  <p class="mt-2">
+    {% if q %}No recipes match "{{ q }}". <a href="/meals">Clear search</a>.
+    {% else %}No recipes yet. <a href="/meals/add">Add your first one.</a>{% endif %}
+  </p>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function bindRowClicks(scope) {
+  scope.querySelectorAll('tr[data-href]:not([data-click-bound])').forEach(row => {
+    row.addEventListener('click', e => {
+      if (e.target.closest('form,button,a')) return;
+      window.location = row.dataset.href;
+    });
+    row.dataset.clickBound = '1';
+  });
+}
+const tbody = document.getElementById('mealTbody');
+if (tbody) bindRowClicks(tbody);
+
+const scrollContainer = document.getElementById('mealTableScroll');
+let nextPage = 2;
+let hasMore  = {{ 'true' if has_more else 'false' }};
+let loading  = false;
+
+async function loadMore() {
+  if (loading || !hasMore) return;
+  loading = true;
+  try {
+    const params = new URLSearchParams(window.location.search);
+    params.set('page', nextPage);
+    const res = await fetch('/meals?' + params.toString(), {
+      headers: { 'X-Requested-With': 'fetch', 'Accept': 'application/json' },
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.html) tbody.insertAdjacentHTML('beforeend', data.html);
+    bindRowClicks(tbody);
+    hasMore = !!data.has_more;
+    nextPage += 1;
+  } finally {
+    loading = false;
+  }
+}
+
+if (scrollContainer && hasMore) {
+  scrollContainer.addEventListener('scroll', () => {
+    const nearBottom = scrollContainer.scrollTop + scrollContainer.clientHeight
+                       >= scrollContainer.scrollHeight - 200;
+    if (nearBottom) loadMore();
+  });
+  const fillToViewport = () => {
+    if (!hasMore || loading) return;
+    if (scrollContainer.scrollHeight <= scrollContainer.clientHeight + 4) {
+      loadMore().then(fillToViewport);
+    }
+  };
+  fillToViewport();
+}
+</script>
+{% endblock %}

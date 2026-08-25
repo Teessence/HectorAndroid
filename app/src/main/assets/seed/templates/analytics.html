@@ -1,0 +1,948 @@
+{% extends 'base.html' %}
+{% block title %}Analytics — Hector{% endblock %}
+{% block content %}
+
+<style>
+  .nav-tabs .nav-link { color: #8b949e; border: 0; padding: .5rem 1rem; }
+  .nav-tabs .nav-link:hover { color: var(--hx-text); border: 0; }
+  .nav-tabs .nav-link.active { color: #58a6ff !important; background: transparent; border-bottom: 2px solid #58a6ff !important; }
+  .nav-tabs { border-bottom: 1px solid var(--hx-border); margin-bottom: 1.25rem; }
+
+  .nutrient-grid { font-size: .82rem; }
+  .nutrient-grid .label { color: #8b949e; }
+
+  @media (min-width: 768px) {
+    .vm-split .vm-minerals { border-left: 1px solid var(--hx-border); }
+  }
+  @media (max-width: 767.98px) {
+    .vm-split .vm-minerals { border-top: 1px solid var(--hx-border); padding-top: .75rem; margin-top: .5rem; }
+  }
+</style>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4 class="fw-bold mb-0"><i class="bi bi-bar-chart-line me-2"></i>Analytics</h4>
+</div>
+
+{# ── Tabs ───────────────────────────────────────────────────────────────── #}
+<ul class="nav nav-tabs" role="tablist">
+  <li class="nav-item">
+    <button class="nav-link {{ 'active' if active_tab == 'overview' else '' }}"
+            data-bs-toggle="tab" data-bs-target="#tab-overview" type="button" role="tab">
+      <i class="bi bi-speedometer2 me-1"></i>Overview
+    </button>
+  </li>
+  <li class="nav-item">
+    <button class="nav-link {{ 'active' if active_tab == 'nutrition' else '' }}"
+            data-bs-toggle="tab" data-bs-target="#tab-nutrition" type="button" role="tab">
+      <i class="bi bi-pie-chart me-1"></i>Nutrition
+    </button>
+  </li>
+  <li class="nav-item">
+    <button class="nav-link {{ 'active' if active_tab == 'projection' else '' }}"
+            data-bs-toggle="tab" data-bs-target="#tab-projection" type="button" role="tab">
+      <i class="bi bi-graph-up-arrow me-1"></i>Forecast
+    </button>
+  </li>
+</ul>
+
+<div class="tab-content">
+
+{# ════════════════════════════════ OVERVIEW ════════════════════════════════ #}
+<div class="tab-pane fade {{ 'show active' if active_tab == 'overview' else '' }}" id="tab-overview" role="tabpanel">
+
+{# Sub-tabs (pills) inside Overview #}
+<ul class="nav nav-pills mb-3" role="tablist" style="font-size:.85rem">
+  <li class="nav-item"><button class="nav-link active py-1 px-3" data-bs-toggle="pill" data-bs-target="#ov-overall"  type="button">Overall</button></li>
+  <li class="nav-item"><button class="nav-link py-1 px-3"        data-bs-toggle="pill" data-bs-target="#ov-progress" type="button">Progress</button></li>
+  <li class="nav-item"><button class="nav-link py-1 px-3"        data-bs-toggle="pill" data-bs-target="#ov-steps"    type="button">Steps</button></li>
+  <li class="nav-item"><button class="nav-link py-1 px-3"        data-bs-toggle="pill" data-bs-target="#ov-hydration" type="button">Hydration</button></li>
+  <li class="nav-item"><button class="nav-link py-1 px-3"        data-bs-toggle="pill" data-bs-target="#ov-intake"   type="button">Caloric Input</button></li>
+  <li class="nav-item"><button class="nav-link py-1 px-3"        data-bs-toggle="pill" data-bs-target="#ov-output"   type="button">Caloric Output</button></li>
+  <li class="nav-item"><button class="nav-link py-1 px-3"        data-bs-toggle="pill" data-bs-target="#ov-balance"  type="button">Balance</button></li>
+</ul>
+
+<div class="tab-content">
+
+{# ── Overall — the snapshot ───────────────────────────────────────────── #}
+<div class="tab-pane fade show active" id="ov-overall" role="tabpanel">
+<div class="row g-3 mb-4">
+  <div class="col-md-4">
+    <div class="card stat-card h-100 p-3 text-center">
+      <div class="stat-lbl"><i class="bi bi-arrow-down-circle me-1 text-info"></i>Total Caloric Input</div>
+      <div class="stat-val text-info mt-2">{{ "{:,.0f}".format(total_intake_all) }}</div>
+      <div class="text-secondary" style="font-size:.75rem">kcal consumed — all-time</div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card stat-card h-100 p-3 text-center">
+      <div class="stat-lbl"><i class="bi bi-arrow-up-circle me-1 text-warning"></i>Total Caloric Output</div>
+      <div class="stat-val text-warning mt-2">{{ "{:,.0f}".format(total_bmr_all) }}</div>
+      <div class="text-secondary" style="font-size:.75rem">kcal — BMR (all-time)</div>
+      <hr class="border-secondary my-2">
+      <div style="font-size:1.1rem;color:#56d364;font-weight:700">{{ "{:,.0f}".format(total_step_burn_all) }}</div>
+      <div class="text-secondary" style="font-size:.72rem">kcal — step burn (all-time)</div>
+      <hr class="border-secondary my-2">
+      <div style="font-size:1.1rem;color:#ffa657;font-weight:700">{{ "{:,.0f}".format(total_output_all) }}</div>
+      <div class="text-secondary" style="font-size:.72rem">kcal — total burn (BMR + steps)</div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card stat-card h-100 p-3 text-center">
+      <div class="stat-lbl"><i class="bi bi-scale me-1"></i>Total Balance</div>
+      {% if total_balance_cal < 0 %}
+      <div class="stat-val balance-negative mt-2">{{ "{:,.0f}".format(total_balance_cal) }}</div>
+      <div class="text-secondary" style="font-size:.75rem">kcal deficit</div>
+      <hr class="border-secondary my-2">
+      <div style="font-size:1.1rem;color:#56d364;font-weight:700">−{{ "%.2f"|format(total_weight_change_kg|abs) }} kg</div>
+      <div class="text-secondary" style="font-size:.72rem">expected weight loss (Δkcal ÷ 7,700)</div>
+      {% elif total_balance_cal > 0 %}
+      <div class="stat-val balance-positive mt-2">+{{ "{:,.0f}".format(total_balance_cal) }}</div>
+      <div class="text-secondary" style="font-size:.75rem">kcal surplus</div>
+      <hr class="border-secondary my-2">
+      <div style="font-size:1.1rem;color:#f85149;font-weight:700">+{{ "%.2f"|format(total_weight_change_kg) }} kg</div>
+      <div class="text-secondary" style="font-size:.72rem">expected weight gain (Δkcal ÷ 7,700)</div>
+      {% else %}
+      <div class="stat-val text-secondary mt-2">0</div>
+      <div class="text-secondary" style="font-size:.75rem">no net change yet</div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+</div>{# /ov-overall #}
+
+{# ── Progress — weight goal + history ─────────────────────────────────── #}
+<div class="tab-pane fade" id="ov-progress" role="tabpanel">
+{% if current_weight and target_weight %}
+{% set tw = target_weight %}
+{% set cw = current_weight %}
+{% set sw = starting_weight|float if starting_weight else cw %}
+<div class="card mb-4 border-success" style="border-width:1px!important">
+  <div class="card-body p-4">
+    <div class="row align-items-center g-3">
+      <div class="col-md-8">
+        <h6 class="fw-bold mb-1">Weight Goal Progress</h6>
+        <div class="d-flex gap-4 mb-2" style="font-size:.85rem">
+          <span class="text-secondary">Start: <strong class="text-body-emphasis">{{ "%.1f"|format(sw) }} kg</strong></span>
+          <span class="text-secondary">Now: <strong class="text-info">{{ "%.1f"|format(cw) }} kg</strong>{% if current_weight_is_predicted %} <span class="text-secondary" style="font-size:.7rem" title="No weight reading logged since start — calculated from your calorie balance">(predicted)</span>{% endif %}</span>
+          <span class="text-secondary">Target: <strong class="text-success">{{ "%.1f"|format(tw) }} kg</strong></span>
+        </div>
+        {% if pct_to_target is not none %}
+        <div class="progress mb-1" style="height:14px;border-radius:6px">
+          <div class="progress-bar bg-success" style="width:{{ "%.1f"|format(pct_to_target) }}%"></div>
+        </div>
+        <small class="text-secondary">{{ "%.1f"|format(pct_to_target) }}% to goal</small>
+        {% endif %}
+      </div>
+      <div class="col-md-4 text-center">
+        {% if weight_lost %}
+        <div style="font-size:2rem;font-weight:700;color:#56d364">{{ "%.2f"|format(weight_lost) }} kg</div>
+        <div class="text-secondary" style="font-size:.75rem">LOST SO FAR</div>
+        {% endif %}
+        {% if cw > tw %}
+        <div class="mt-2" style="color:#ffa657;font-size:1.1rem;font-weight:600">{{ "%.1f"|format(cw - tw) }} kg to go</div>
+        {% else %}
+        <div class="mt-2 text-success fw-bold">Goal reached!</div>
+        {% endif %}
+      </div>
+    </div>
+    {% if steps_to_target or days_to_target %}
+    <hr class="border-secondary my-3">
+    <div class="row g-3">
+      {% if steps_to_target %}
+      <div class="col-md-6">
+        <div class="text-secondary" style="font-size:.75rem;text-transform:uppercase;letter-spacing:.08em">Steps needed to reach target (diet-neutral)</div>
+        <div style="font-size:1.5rem;font-weight:700;color:#388bfd">{{ "{:,.0f}".format(steps_to_target) }}</div>
+        {% if steps_breakdown_rows %}
+        <div class="text-secondary mt-2" style="font-size:.7rem;text-transform:uppercase;letter-spacing:.06em">By weight range</div>
+        <table class="table table-sm table-borderless mb-0 mt-1" style="font-size:.78rem">
+          <thead class="text-secondary" style="font-size:.7rem;text-transform:uppercase;letter-spacing:.06em">
+            <tr>
+              <th>Range</th>
+              <th class="text-end">kg</th>
+              <th class="text-end">kcal/step</th>
+              <th class="text-end">Steps</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in steps_breakdown_rows %}
+            <tr>
+              <td class="text-secondary">{{ "%g"|format(row.bottom) }}–{{ "%g"|format(row.top) }} kg</td>
+              <td class="text-end">{{ "%.2f"|format(row.kg) }}</td>
+              <td class="text-end text-secondary">{{ "%.3f"|format(row.cps) }}</td>
+              <td class="text-end" style="color:#388bfd">{{ "{:,.0f}".format(row.steps) }}</td>
+            </tr>
+            {% endfor %}
+            <tr style="border-top:1px solid var(--hx-border);font-weight:600">
+              <td colspan="3" class="text-end text-secondary">Total</td>
+              <td class="text-end" style="color:#388bfd">{{ "{:,.0f}".format(steps_to_target) }}</td>
+            </tr>
+          </tbody>
+        </table>
+        {% endif %}
+      </div>
+      {% endif %}
+      {% if days_to_target %}
+      <div class="col-md-6">
+        <div class="text-secondary" style="font-size:.75rem;text-transform:uppercase;letter-spacing:.08em">Estimated days at current deficit</div>
+        <div style="font-size:1.5rem;font-weight:700;color:#e3b341">{{ "%.0f"|format(days_to_target) }}</div>
+        {% if target_date_at_deficit %}
+        <div class="text-secondary" style="font-size:.75rem">
+          target date: <strong class="text-body-emphasis">{{ target_date_at_deficit }}</strong>
+        </div>
+        {% endif %}
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+{# Weight history chart inside Progress tab #}
+{% if weight_history|length > 1 %}
+<div class="card mb-4">
+  <div class="card-body p-3">
+    <h6 class="fw-bold mb-3"><i class="bi bi-graph-down me-1 text-success"></i>Weight History</h6>
+    <canvas id="weightChart" height="80"></canvas>
+  </div>
+</div>
+{% endif %}
+</div>{# /ov-progress #}
+
+{# ── Steps ──────────────────────────────────────────────────────────── #}
+<div class="tab-pane fade" id="ov-steps" role="tabpanel">
+
+<div class="row g-3 mb-4">
+  <div class="col-12"><h5 class="fw-bold mb-0"><i class="bi bi-person-walking me-2 text-primary"></i>Steps</h5></div>
+  {% for lbl, val in [
+    ('Total Steps',       "{:,}".format(step_stats.total or 0)),
+    ('Avg / Day',         "{:,.0f}".format(step_stats.avg_day or 0)),
+    ('Total Kcal Burned', "{:,.0f}".format(total_step_cals)),
+  ] %}
+  <div class="col-6 col-md-4">
+    <div class="card stat-card p-3 text-center">
+      <div class="stat-lbl">{{ lbl }}</div>
+      <div class="stat-val mt-1" style="font-size:1.3rem">{{ val }}</div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+{% if daily_dates %}
+<div class="card mb-4">
+  <div class="card-body p-3">
+    <h6 class="fw-bold mb-3"><i class="bi bi-person-walking me-1 text-primary"></i>Daily Steps</h6>
+    <canvas id="dailyStepsChart" height="80"></canvas>
+  </div>
+</div>
+{% endif %}
+</div>{# /ov-steps #}
+
+{# ── Hydration ──────────────────────────────────────────────────────── #}
+<div class="tab-pane fade" id="ov-hydration" role="tabpanel">
+
+<div class="row g-3 mb-4">
+  <div class="col-md-6">
+    <div class="card stat-card h-100 p-3 text-center">
+      <div class="stat-lbl"><i class="bi bi-droplet me-1 text-info"></i>Total Hydration</div>
+      <div class="stat-val text-info mt-2">{{ "{:,.0f}".format(total_hydration_ml) }}</div>
+      <div class="text-secondary" style="font-size:.75rem">
+        ml — all-time {% if total_hydration_ml %}(≈ {{ "%.1f"|format(total_hydration_ml / 1000) }} L){% endif %}
+      </div>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="card stat-card h-100 p-3 text-center">
+      <div class="stat-lbl">Avg / Day</div>
+      <div class="stat-val text-info mt-2">{{ "{:,.0f}".format(avg_hydration_ml) }}</div>
+      <div class="text-secondary" style="font-size:.75rem">ml/day on tracked days</div>
+    </div>
+  </div>
+</div>
+
+{% if hydration_dates %}
+<div class="card mb-4">
+  <div class="card-body p-3">
+    <h6 class="fw-bold mb-3"><i class="bi bi-droplet me-1 text-info"></i>Daily Hydration</h6>
+    <canvas id="hydrationChart" height="80"></canvas>
+  </div>
+</div>
+{% else %}
+<p class="text-secondary">No hydration logged yet. Track your water intake on the <a href="/hydration" class="text-info">Hydration page</a>.</p>
+{% endif %}
+</div>{# /ov-hydration #}
+
+{# ── Caloric Input ─────────────────────────────────────────────────── #}
+<div class="tab-pane fade" id="ov-intake" role="tabpanel">
+
+<div class="row g-3 mb-4">
+  <div class="col-md-6">
+    <div class="card stat-card h-100 p-3 text-center">
+      <div class="stat-lbl"><i class="bi bi-arrow-down-circle me-1 text-info"></i>Total Caloric Input</div>
+      <div class="stat-val text-info mt-2">{{ "{:,.0f}".format(total_intake_all) }}</div>
+      <div class="text-secondary" style="font-size:.75rem">kcal consumed — all-time</div>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="card stat-card h-100 p-3 text-center">
+      <div class="stat-lbl">Avg / Day</div>
+      <div class="stat-val text-info mt-2">{{ "{:,.0f}".format(avg_daily_intake) }}</div>
+      <div class="text-secondary" style="font-size:.75rem">kcal/day on average</div>
+    </div>
+  </div>
+</div>
+
+{% if daily_dates %}
+<div class="card mb-4">
+  <div class="card-body p-3">
+    <h6 class="fw-bold mb-3"><i class="bi bi-arrow-down-circle me-1 text-info"></i>Daily Caloric Input</h6>
+    <canvas id="dailyIntakeChart" height="80"></canvas>
+  </div>
+</div>
+{% endif %}
+</div>{# /ov-intake #}
+
+{# ── Caloric Output ─────────────────────────────────────────────────── #}
+<div class="tab-pane fade" id="ov-output" role="tabpanel">
+
+<div class="row g-3 mb-4">
+  <div class="col-md-4">
+    <div class="card stat-card h-100 p-3 text-center">
+      <div class="stat-lbl">BMR (all-time)</div>
+      <div class="stat-val text-warning mt-2">{{ "{:,.0f}".format(total_bmr_all) }}</div>
+      <div class="text-secondary" style="font-size:.75rem">kcal at rest</div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card stat-card h-100 p-3 text-center">
+      <div class="stat-lbl">Step Burn (all-time)</div>
+      <div class="stat-val mt-2" style="color:#56d364">{{ "{:,.0f}".format(total_step_burn_all) }}</div>
+      <div class="text-secondary" style="font-size:.75rem">kcal from steps</div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card stat-card h-100 p-3 text-center">
+      <div class="stat-lbl">Total Burn</div>
+      <div class="stat-val mt-2" style="color:#ffa657">{{ "{:,.0f}".format(total_output_all) }}</div>
+      <div class="text-secondary" style="font-size:.75rem">BMR + step burn</div>
+    </div>
+  </div>
+</div>
+<p class="text-secondary" style="font-size:.85rem">
+  Daily output is recomputed each day using your current weight (predicted from the calorie balance when no actual reading is logged).
+</p>
+</div>{# /ov-output #}
+
+{# ── Balance ────────────────────────────────────────────────────────── #}
+<div class="tab-pane fade" id="ov-balance" role="tabpanel">
+
+<div class="row g-3 mb-4">
+  <div class="col-md-6">
+    <div class="card stat-card h-100 p-3 text-center">
+      <div class="stat-lbl"><i class="bi bi-scale me-1"></i>Total Balance</div>
+      {% if total_balance_cal < 0 %}
+      <div class="stat-val balance-negative mt-2">{{ "{:,.0f}".format(total_balance_cal) }}</div>
+      <div class="text-secondary" style="font-size:.75rem">kcal deficit</div>
+      {% elif total_balance_cal > 0 %}
+      <div class="stat-val balance-positive mt-2">+{{ "{:,.0f}".format(total_balance_cal) }}</div>
+      <div class="text-secondary" style="font-size:.75rem">kcal surplus</div>
+      {% else %}
+      <div class="stat-val text-secondary mt-2">0</div>
+      <div class="text-secondary" style="font-size:.75rem">no net change yet</div>
+      {% endif %}
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="card stat-card h-100 p-3 text-center">
+      <div class="stat-lbl">Expected Weight Change</div>
+      {% if total_balance_cal < 0 %}
+      <div class="stat-val mt-2" style="color:#56d364">−{{ "%.2f"|format(total_weight_change_kg|abs) }} kg</div>
+      <div class="text-secondary" style="font-size:.75rem">Δkcal ÷ 7,700</div>
+      {% elif total_balance_cal > 0 %}
+      <div class="stat-val mt-2" style="color:#f85149">+{{ "%.2f"|format(total_weight_change_kg) }} kg</div>
+      <div class="text-secondary" style="font-size:.75rem">Δkcal ÷ 7,700</div>
+      {% else %}
+      <div class="stat-val text-secondary mt-2">0 kg</div>
+      <div class="text-secondary" style="font-size:.75rem">no net change yet</div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{% if daily_dates %}
+<div class="card mb-4">
+  <div class="card-body p-3">
+    <h6 class="fw-bold mb-3"><i class="bi bi-scale me-1"></i>Daily Caloric Balance (intake − output)</h6>
+    <canvas id="dailyBalanceChart" height="80"></canvas>
+    <small class="text-secondary d-block mt-2">Negative bars = deficit (weight loss). Positive bars = surplus (weight gain).</small>
+  </div>
+</div>
+{% endif %}
+</div>{# /ov-balance #}
+
+</div>{# /tab-content (sub-tabs) #}
+</div>{# /tab-overview #}
+
+
+{# ══════════════════════════ NUTRITION TOTALS TAB ══════════════════════════ #}
+<div class="tab-pane fade {{ 'show active' if active_tab == 'nutrition' else '' }}" id="tab-nutrition" role="tabpanel">
+
+{% set MACROS = [
+  ('calories','Calories','kcal','#79c0ff','%.0f'),
+  ('protein', 'Protein', 'g',   '#56d364','%.1f'),
+  ('carbs',   'Carbohydrates','g', '#e3b341','%.1f'),
+  ('fat',     'Fat',     'g',   '#ffa657','%.1f'),
+  ('saturates','Saturates','g', '#ff7b72','%.1f'),
+  ('fiber',   'Fiber',   'g',   '#8b949e','%.1f'),
+  ('sugar',   'Sugar',   'g',   '#8b949e','%.1f'),
+  ('salt',    'Salt',    'g',   '#8b949e','%.2f'),
+] %}
+{% set VITS = [
+  ('vit_a','Vitamin A','μg'),('vit_c','Vitamin C','mg'),('vit_d','Vitamin D','μg'),
+  ('vit_e','Vitamin E','mg'),('vit_k','Vitamin K','μg'),
+  ('vit_b1','B1','mg'),('vit_b2','B2','mg'),('vit_b3','B3','mg'),
+  ('vit_b6','B6','mg'),('vit_b9','B9','μg'),('vit_b12','B12','μg'),
+] %}
+{% set MINS = [
+  ('calcium','Calcium','mg'),('iron','Iron','mg'),('magnesium','Magnesium','mg'),
+  ('phosphorus','Phosphorus','mg'),('potassium','Potassium','mg'),('zinc','Zinc','mg'),
+  ('selenium','Selenium','μg'),('iodine','Iodine','μg'),('copper','Copper','mg'),
+  ('manganese','Manganese','mg'),
+] %}
+
+<style>
+  /* Row tints in the forecast table: purple = whole-kg milestone, blue = today,
+     green = target arrival, gradient blend when today + target coincide.
+     Milestone rule sits first so today/target win when they share a row. */
+  .forecast-table tr.row-milestone > td { background: rgba(163, 113, 247, 0.13) !important; }
+  .forecast-table tr.row-today > td  { background: rgba(56, 139, 253, 0.14) !important; }
+  .forecast-table tr.row-target > td { background: rgba(86, 211, 100, 0.14) !important; }
+  .forecast-table tr.row-today.row-target > td {
+    background: linear-gradient(90deg, rgba(56,139,253,.16), rgba(86,211,100,.16)) !important;
+  }
+  .nutri-section { border-radius: 10px; padding: 1rem 1.1rem; }
+  .nutri-section + .nutri-section { margin-top: 1rem; }
+  .nutri-nutrition { background: rgba(56, 139, 253, 0.07); border: 1px solid rgba(56, 139, 253, 0.22); }
+  .nutri-vitamins  { background: rgba(163, 113, 247, 0.07); border: 1px solid rgba(163, 113, 247, 0.22); }
+  .nutri-minerals  { background: rgba(247, 133, 54, 0.07);  border: 1px solid rgba(247, 133, 54, 0.22); }
+</style>
+
+{# All-time nutrient cell with a diary-style progress bar.
+   Cumulative target = daily target × days_since_start. Items with no target
+   show "—" and an empty bar (handy for nutrients you haven't set a goal for). #}
+{% macro alltime_bar(col, label, unit, color='#388bfd') %}
+  {% set v = total_nutrition[col] %}
+  {% set t = (targets[col] or 0) * days_since_start %}
+  {% set p = (v / t * 100) if (t and t > 0) else 0 %}
+  <div class="col-6 col-md-3">
+    <div class="d-flex justify-content-between" style="font-size:.85rem">
+      <span class="text-secondary">{{ label }}{% if unit %} ({{ unit }}){% endif %}</span>
+      <span>
+        <span style="color:{{ color }};font-weight:600">{{ "%.1f"|format(v) }}</span>
+        <span class="text-secondary">/ {{ "%.0f"|format(t) if t else '—' }}</span>
+        {% if t and t > 0 %}<span class="text-secondary">({{ "%.0f"|format(p) }}%)</span>{% endif %}
+      </span>
+    </div>
+    <div class="progress mt-1" style="height:4px">
+      <div class="progress-bar" style="width:{{ p if p <= 100 else 100 }}%;background:{{ '#56d364' if p >= 100 else color }}"></div>
+    </div>
+  </div>
+{% endmacro %}
+
+{# Sort vitamins/minerals descending by % of cumulative target (same rule as
+   diary day summary). Items with no/zero target sink to the bottom. #}
+{% set alltime_vits_sorted = [] %}
+{% for col, label, unit in VITS %}
+  {%- set t = (targets[col] or 0) * days_since_start -%}
+  {%- set pct = (total_nutrition[col] / t * 100) if (t and t > 0) else -1 -%}
+  {%- set _ = alltime_vits_sorted.append((pct, col, label, unit)) -%}
+{% endfor %}
+{% set alltime_vits_sorted = alltime_vits_sorted|sort(reverse=true) %}
+
+{% set alltime_mins_sorted = [] %}
+{% for col, label, unit in MINS %}
+  {%- set t = (targets[col] or 0) * days_since_start -%}
+  {%- set pct = (total_nutrition[col] / t * 100) if (t and t > 0) else -1 -%}
+  {%- set _ = alltime_mins_sorted.append((pct, col, label, unit)) -%}
+{% endfor %}
+{% set alltime_mins_sorted = alltime_mins_sorted|sort(reverse=true) %}
+
+<div class="card mb-4">
+  <div class="card-body p-4">
+    <h5 class="fw-bold mb-3"><i class="bi bi-clipboard-data me-2"></i>All-Time Nutrition</h5>
+    <p class="text-secondary mb-4" style="font-size:.85rem">
+      Cumulative sum of every nutrient across every day you've logged in your Diary.
+      Each bar compares your total against
+      <strong>{{ days_since_start }}</strong>
+      day{{ '' if days_since_start == 1 else 's' }} × the daily target from
+      <a href="/settings" class="text-info">Settings</a> (days are counted from your
+      starting date). Vitamins and minerals are ordered by % achieved.
+    </p>
+
+    <div class="nutri-section nutri-nutrition">
+      <div class="text-secondary mb-3" style="font-size:.78rem;text-transform:uppercase;letter-spacing:.08em">
+        <i class="bi bi-pie-chart me-1"></i>Nutrition
+      </div>
+      <div class="row g-3">
+        {% for col, label, unit, color, fmt in MACROS %}{{ alltime_bar(col, label, unit, color) }}{% endfor %}
+      </div>
+    </div>
+
+    <div class="nutri-section nutri-vitamins">
+      <div class="text-secondary mb-3" style="font-size:.78rem;text-transform:uppercase;letter-spacing:.08em">
+        <i class="bi bi-capsule me-1"></i>Vitamins
+      </div>
+      <div class="row g-3">
+        {% for _pct, col, label, unit in alltime_vits_sorted %}{{ alltime_bar(col, label, unit, '#bc8cff') }}{% endfor %}
+      </div>
+    </div>
+
+    <div class="nutri-section nutri-minerals">
+      <div class="text-secondary mb-3" style="font-size:.78rem;text-transform:uppercase;letter-spacing:.08em">
+        <i class="bi bi-moisture me-1"></i>Minerals
+      </div>
+      <div class="row g-3">
+        {% for _pct, col, label, unit in alltime_mins_sorted %}{{ alltime_bar(col, label, unit, '#ffa657') }}{% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+
+</div>{# /tab-nutrition #}
+
+
+{# ══════════════════════════ DAILY PROJECTION TAB ══════════════════════════ #}
+<div class="tab-pane fade {{ 'show active' if active_tab == 'projection' else '' }}" id="tab-projection" role="tabpanel">
+
+<div class="card mb-4">
+  <div class="card-body p-3">
+    <form method="get" class="row g-3 align-items-end" id="projForm">
+      <input type="hidden" name="tab" value="projection">
+      <input type="hidden" name="days" value="{{ days_fwd }}">
+      <div class="col-md-4">
+        <label class="form-label fw-semibold">Avg daily steps</label>
+        <input type="number" name="avg_steps" class="form-control"
+               min="0" step="100" value="{{ avg_steps }}">
+        <div class="form-text">Default {{ "{:,}".format(default_steps) }} (your average)</div>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label fw-semibold">Caloric Input</label>
+        <div class="input-group">
+          {% if bmr_delta > 0 %}<span class="input-group-text">+</span>{% endif %}
+          <input type="number" name="bmr_delta" class="form-control" step="10" value="{{ bmr_delta }}">
+        </div>
+        <div class="form-text">
+          Relative to BMR (e.g. <code>-200</code> = eat BMR − 200 kcal/day).
+          {% if bmr_delta == 0 %}Today: eat exactly <code>BMR</code> each day.
+          {% else %}Today: eat <code>BMR {{ '+' if bmr_delta > 0 else '' }}{{ bmr_delta }}</code> kcal/day.{% endif %}
+          Default {{ '+' if default_delta > 0 else '' }}{{ default_delta }} (your average).
+        </div>
+      </div>
+      <div class="col-md-4 d-flex align-items-end">
+        <span id="updateIndicator" class="text-secondary small"></span>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="card stat-card p-3 text-center h-100">
+      <div class="stat-lbl">Days Tracked</div>
+      <div class="stat-val text-primary mt-1">{{ proj_historical|length }}</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card stat-card p-3 text-center h-100">
+      <div class="stat-lbl">Current Weight</div>
+      <div class="stat-val mt-1" style="color:#56d364">
+        {{ "%.1f kg"|format(current_weight) if current_weight else '—' }}
+      </div>
+      {% if current_weight_is_predicted %}
+      <div class="text-secondary" style="font-size:.7rem" title="No weight reading logged since start — calculated from calorie balance">
+        (predicted)
+      </div>
+      {% endif %}
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card stat-card p-3 text-center h-100">
+      <div class="stat-lbl">Target Weight</div>
+      <div class="stat-val mt-1" style="color:#79c0ff">
+        {{ "%.1f kg"|format(target_weight) if target_weight else '—' }}
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card stat-card p-3 text-center h-100">
+      <div class="stat-lbl">Estimated Target Date</div>
+      <div class="stat-val mt-1" style="color:#e3b341;font-size:1.1rem">
+        {{ eta_target or '—' }}
+      </div>
+      {% if eta_days_from_today is not none %}
+      <div class="text-secondary" style="font-size:.72rem">
+        {% if eta_days_from_today == 0 %}today
+        {% elif eta_days_from_today < 0 %}{{ eta_days_from_today|abs }} day{{ '' if eta_days_from_today|abs == 1 else 's' }} ago
+        {% else %}in {{ eta_days_from_today }} day{{ '' if eta_days_from_today == 1 else 's' }}{% endif %}
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header py-2 px-3" style="background:var(--hx-panel2);border-color:var(--hx-border)">
+    <span class="fw-semibold">Day-by-Day Breakdown</span>
+    <span class="text-secondary ms-2" style="font-size:.8rem">
+      {{ proj_historical|length }} actual + {{ proj_projected|length }} projected
+    </span>
+  </div>
+  <div class="table-responsive" id="forecast-scroll" style="max-height:60vh">
+    <table class="table table-sm table-hover align-middle mb-0 forecast-table">
+      <thead style="position:sticky;top:0;background:var(--hx-panel);z-index:1">
+        <tr>
+          <th class="text-center">Date</th>
+          <th class="text-center" style="color:#56d364">Weight (kg)</th>
+          <th class="text-center text-secondary">BMR</th>
+          <th class="text-center">Steps</th>
+          <th class="text-center text-secondary">Steps (Calories)</th>
+          <th class="text-center" style="color:#79c0ff">Caloric Input</th>
+          <th class="text-center" style="color:#ffa657">Caloric Output</th>
+          <th class="text-center">Caloric Balance</th>
+          <th class="text-center">Cumulative Caloric Balance</th>
+          <th class="text-center" style="color:#d2a8ff">Calories Left to Target</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% set past_count = proj_historical | selectattr('date', 'lt', today) | list | length %}
+        {% if past_count %}
+        <tr id="past-days-toggle" data-count="{{ past_count }}" style="background:var(--hx-panel2);cursor:pointer">
+          <td colspan="10" class="text-center text-secondary py-2" style="font-size:.78rem;text-transform:uppercase;letter-spacing:.08em">
+            <i class="bi bi-chevron-right me-1" id="past-days-caret" style="display:inline-block;transition:transform .2s"></i>
+            <span id="past-days-label">Show {{ past_count }} earlier day{{ '' if past_count == 1 else 's' }}</span>
+          </td>
+        </tr>
+        {% endif %}
+        {% for row in proj_historical %}
+        <tr class="{{ 'past-day-row' if row.date < today }} {{ 'row-milestone' if row.milestone }} {{ 'row-today' if row.date == today }} {{ 'row-target' if row.date == eta_target }}"{% if row.date < today %} style="display:none"{% endif %}>
+          <td class="text-center"><span class="text-secondary">{{ row.date }}</span>{% if row.date == today %} <span class="badge bg-primary ms-1">today</span>{% endif %}</td>
+          <td class="text-center fw-semibold" style="color:#56d364">{{ "%.2f"|format(row.projected_weight) if row.projected_weight else '—' }}{% if row.weight_delta is not none %} <span style="font-size:.85em;font-weight:400;color:{% if row.weight_delta > 0 %}#56d364{% elif row.weight_delta < 0 %}#f85149{% else %}#8b949e{% endif %}">({{ "%+.2f"|format(row.weight_delta) }})</span>{% endif %}{% if row.milestone %} <span class="badge ms-1" style="background:#a371f7;color:#fff">milestone {{ "%g"|format(row.milestone_num) }}</span>{% endif %}</td>
+          <td class="text-center text-secondary">{{ "{:,.0f}".format(row.bmr) if row.bmr else '—' }}</td>
+          <td class="text-center">{{ "{:,}".format(row.steps) if row.steps else '—' }}</td>
+          <td class="text-center text-secondary">{{ "{:,.0f}".format(row.step_cal) if row.step_cal else '—' }}</td>
+          <td class="text-center">{{ "{:,.0f}".format(row.food) if row.food else '—' }}</td>
+          <td class="text-center">{{ "{:,.0f}".format(row.output) if row.output else '—' }}</td>
+          <td class="text-center">
+            {% if row.balance %}
+            <span class="{{ 'balance-positive' if row.balance > 0 else 'balance-negative' }}">
+              {{ '+' if row.balance > 0 }}{{ "{:,.0f}".format(row.balance) }}
+            </span>
+            {% else %}—{% endif %}
+          </td>
+          <td class="text-center">
+            {% if row.cum_balance %}
+            <span class="{{ 'balance-positive' if row.cum_balance > 0 else 'balance-negative' }}">
+              {{ '+' if row.cum_balance > 0 }}{{ "{:,.0f}".format(row.cum_balance) }}
+            </span>
+            {% else %}—{% endif %}
+          </td>
+          <td class="text-center" style="color:#d2a8ff">
+            {% if row.cals_to_target is not none %}
+              {{ "{:,.0f}".format(row.cals_to_target) }}
+              {%- if row.steps_to_target is not none %} <span class="text-secondary" style="font-size:.85em">({{ "{:,.0f}".format(row.steps_to_target) }} steps{% if row.steps_to_next_milestone is not none %}, {{ "{:,.0f}".format(row.steps_to_next_milestone) }} steps to the next milestone{% endif %})</span>{% endif %}
+            {% else %}—{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+        {% if proj_projected %}
+        <tr style="background:var(--hx-panel2)">
+          <td colspan="10" class="text-center text-secondary py-2" style="font-size:.78rem;text-transform:uppercase;letter-spacing:.08em">
+            <i class="bi bi-arrow-down-circle me-1"></i>Projected — based on {{ "{:,}".format(avg_steps) }} steps/day · BMR {{ '+' if bmr_delta >= 0 else '' }}{{ bmr_delta }} kcal/day
+          </td>
+        </tr>
+        {% endif %}
+        {% for row in proj_projected %}
+        <tr style="opacity:.78" class="{{ 'row-milestone' if row.milestone }} {{ 'row-today' if row.date == today }} {{ 'row-target' if row.date == eta_target }}">
+          <td class="text-center"><span class="text-secondary">{{ row.date }}</span>{% if row.date == today %} <span class="badge bg-primary ms-1">today</span>{% endif %}{% if row.date == eta_target %} <span class="badge bg-success ms-1">target</span>{% endif %}</td>
+          <td class="text-center fw-semibold" style="color:#56d364">{{ "%.2f"|format(row.projected_weight) if row.projected_weight else '—' }}{% if row.weight_delta is not none %} <span style="font-size:.85em;font-weight:400;color:{% if row.weight_delta > 0 %}#56d364{% elif row.weight_delta < 0 %}#f85149{% else %}#8b949e{% endif %}">({{ "%+.2f"|format(row.weight_delta) }})</span>{% endif %}{% if row.milestone %} <span class="badge ms-1" style="background:#a371f7;color:#fff">milestone {{ "%g"|format(row.milestone_num) }}</span>{% endif %}</td>
+          <td class="text-center text-secondary">{{ "{:,.0f}".format(row.bmr) if row.bmr else '—' }}</td>
+          <td class="text-center">{{ "{:,}".format(row.steps) if row.steps else '—' }}</td>
+          <td class="text-center text-secondary">{{ "{:,.0f}".format(row.step_cal) if row.step_cal else '—' }}</td>
+          <td class="text-center">{{ "{:,.0f}".format(row.food) if row.food else '—' }}</td>
+          <td class="text-center">{{ "{:,.0f}".format(row.output) if row.output else '—' }}</td>
+          <td class="text-center">
+            {% if row.balance %}
+            <span class="{{ 'balance-positive' if row.balance > 0 else 'balance-negative' }}">
+              {{ '+' if row.balance > 0 }}{{ "{:,.0f}".format(row.balance) }}
+            </span>
+            {% else %}—{% endif %}
+          </td>
+          <td class="text-center">
+            <span class="{{ 'balance-positive' if row.cum_balance > 0 else 'balance-negative' }}">
+              {{ '+' if row.cum_balance > 0 }}{{ "{:,.0f}".format(row.cum_balance) }}
+            </span>
+          </td>
+          <td class="text-center" style="color:#d2a8ff">
+            {% if row.cals_to_target is not none %}
+              {{ "{:,.0f}".format(row.cals_to_target) }}
+              {%- if row.steps_to_target is not none %} <span class="text-secondary" style="font-size:.85em">({{ "{:,.0f}".format(row.steps_to_target) }} steps{% if row.steps_to_next_milestone is not none %}, {{ "{:,.0f}".format(row.steps_to_next_milestone) }} steps to the next milestone{% endif %})</span>{% endif %}
+            {% else %}—{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+        {% if not proj_historical and not proj_projected %}
+        <tr><td colspan="10" class="text-center text-secondary py-4">No tracked days yet.</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+</div>{# /tab-projection #}
+
+</div>{# /tab-content #}
+
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
+<script>
+if (window.ChartDataLabels) { Chart.register(window.ChartDataLabels); }
+
+// Fitbit-style: slim bars with rounded tops, narrow category spacing.
+Chart.defaults.datasets.bar.maxBarThickness = 14;
+Chart.defaults.datasets.bar.borderRadius     = 4;
+Chart.defaults.datasets.bar.borderSkipped    = false;
+Chart.defaults.datasets.bar.categoryPercentage = 0.7;
+Chart.defaults.datasets.bar.barPercentage      = 0.85;
+
+const fmtNum = v => (v == null) ? '' : Number(v).toLocaleString('en-US');
+
+// Canvas can't resolve CSS var() strings — read the theme values at runtime.
+const _hxStyle = getComputedStyle(document.documentElement);
+const hxText   = (_hxStyle.getPropertyValue('--hx-text')   || '#e6edf3').trim();
+const hxBorder = (_hxStyle.getPropertyValue('--hx-border') || '#30363d').trim();
+
+const dataLabelsForBar = (opts = {}) => Object.assign({
+  anchor: 'end', align: 'top', clamp: true,
+  color: hxText, font: { size: 10, weight: '600' },
+  formatter: (v) => fmtNum(v),
+}, opts);
+
+const chartDefaults = {
+  layout: { padding: { top: 26 } },        // headroom for datalabels above bars
+  plugins: {
+    legend: { display: false },
+    datalabels: { display: false },        // off by default; enabled per-chart below
+  },
+  scales: {
+    x: { grid: { color: hxBorder }, ticks: { color: '#8b949e', maxTicksLimit: 12 } },
+    y: { grid: { color: hxBorder }, ticks: { color: '#8b949e' }, grace: '8%' }
+  }
+};
+
+const allCharts = [];
+
+{% if daily_dates %}
+const dailyLabels = {{ daily_dates | tojson }};
+const dailySteps  = {{ daily_steps_series | tojson }};
+const dailyIntake = {{ daily_intake | tojson }};
+const dailyBalance = {{ daily_balance | tojson }};
+
+allCharts.push(new Chart(document.getElementById('dailyStepsChart'), {
+  type: 'bar',
+  data: {
+    labels: dailyLabels,
+    datasets: [{
+      data: dailySteps,
+      backgroundColor: '#388bfd55', borderColor: '#388bfd',
+      borderWidth: 1, borderRadius: 3,
+    }]
+  },
+  options: {
+    ...chartDefaults,
+    plugins: {
+      ...chartDefaults.plugins,
+      datalabels: dataLabelsForBar({ color: '#79c0ff' }),
+    },
+    scales: {
+      ...chartDefaults.scales,
+      y: { ...chartDefaults.scales.y, beginAtZero: true }
+    }
+  }
+}));
+
+allCharts.push(new Chart(document.getElementById('dailyIntakeChart'), {
+  type: 'bar',
+  data: {
+    labels: dailyLabels,
+    datasets: [{
+      data: dailyIntake,
+      backgroundColor: '#79c0ff55', borderColor: '#79c0ff',
+      borderWidth: 1, borderRadius: 3,
+    }]
+  },
+  options: {
+    ...chartDefaults,
+    plugins: {
+      ...chartDefaults.plugins,
+      datalabels: dataLabelsForBar({ color: '#79c0ff' }),
+    },
+    scales: {
+      ...chartDefaults.scales,
+      y: { ...chartDefaults.scales.y, beginAtZero: true,
+           title: { display: true, text: 'kcal', color: '#8b949e' } }
+    }
+  }
+}));
+
+allCharts.push(new Chart(document.getElementById('dailyBalanceChart'), {
+  type: 'bar',
+  data: {
+    labels: dailyLabels,
+    datasets: [{
+      data: dailyBalance,
+      backgroundColor: dailyBalance.map(v => v >= 0 ? '#f8514955' : '#3fb95055'),
+      borderColor:     dailyBalance.map(v => v >= 0 ? '#f85149'   : '#3fb950'),
+      borderWidth: 1, borderRadius: 3,
+    }]
+  },
+  options: {
+    ...chartDefaults,
+    plugins: {
+      ...chartDefaults.plugins,
+      datalabels: dataLabelsForBar({
+        // Positive bars: label above; negative bars: label below
+        anchor: (ctx) => (ctx.dataset.data[ctx.dataIndex] ?? 0) >= 0 ? 'end' : 'start',
+        align:  (ctx) => (ctx.dataset.data[ctx.dataIndex] ?? 0) >= 0 ? 'top' : 'bottom',
+        color:  (ctx) => (ctx.dataset.data[ctx.dataIndex] ?? 0) >= 0 ? '#f85149' : '#3fb950',
+      }),
+    },
+    scales: {
+      ...chartDefaults.scales,
+      y: { ...chartDefaults.scales.y, title: { display: true, text: 'kcal (− = deficit)', color: '#8b949e' } }
+    }
+  }
+}));
+{% endif %}
+
+{% if hydration_dates %}
+allCharts.push(new Chart(document.getElementById('hydrationChart'), {
+  type: 'bar',
+  data: {
+    labels: {{ hydration_dates | tojson }},
+    datasets: [{
+      data: {{ hydration_series | tojson }},
+      backgroundColor: '#79c0ff55', borderColor: '#79c0ff',
+      borderWidth: 1, borderRadius: 3,
+    }]
+  },
+  options: {
+    ...chartDefaults,
+    plugins: {
+      ...chartDefaults.plugins,
+      datalabels: dataLabelsForBar({ color: '#79c0ff' }),
+    },
+    scales: {
+      ...chartDefaults.scales,
+      y: { ...chartDefaults.scales.y, beginAtZero: true,
+           title: { display: true, text: 'ml', color: '#8b949e' } }
+    }
+  }
+}));
+{% endif %}
+
+{% if weight_history|length > 1 %}
+allCharts.push(new Chart(document.getElementById('weightChart'), {
+  type: 'line',
+  data: {
+    labels: {{ weight_history | map(attribute='date') | list | tojson }},
+    datasets: [{
+      data: {{ weight_history | map(attribute='weight_kg') | list | tojson }},
+      borderColor: '#56d364', backgroundColor: '#56d36422',
+      tension: 0.3, pointRadius: 3, fill: true,
+    }]
+  },
+  options: {
+    ...chartDefaults,
+    scales: {
+      ...chartDefaults.scales,
+      y: { ...chartDefaults.scales.y, title: { display: true, text: 'kg', color: '#8b949e' } }
+    }
+  }
+}));
+{% endif %}
+
+// Resize charts when a tab becomes visible (canvases inside display:none have width 0).
+document.querySelectorAll('button[data-bs-toggle="tab"], button[data-bs-toggle="pill"]').forEach(btn => {
+  btn.addEventListener('shown.bs.tab', () => allCharts.forEach(c => c.resize()));
+});
+
+// ── Auto-recalculate the projection 5s after any input change ──────────────
+(function() {
+  const form = document.getElementById('projForm');
+  if (!form) return;
+  const indicator = document.getElementById('updateIndicator');
+  const inputs = form.querySelectorAll('input[type=number]');
+  let timer, countdownTimer, secondsLeft;
+  function startCountdown() {
+    clearInterval(countdownTimer);
+    secondsLeft = 5;
+    indicator.textContent = `Updating in ${secondsLeft}s…`;
+    countdownTimer = setInterval(() => {
+      secondsLeft -= 1;
+      if (secondsLeft <= 0) clearInterval(countdownTimer);
+      else indicator.textContent = `Updating in ${secondsLeft}s…`;
+    }, 1000);
+  }
+  inputs.forEach(input => {
+    input.addEventListener('input', () => {
+      clearTimeout(timer);
+      startCountdown();
+      timer = setTimeout(() => {
+        indicator.textContent = 'Updating…';
+        form.submit();
+      }, 5000);
+    });
+  });
+})();
+
+// ── Forecast table: size the scroll area to end at the viewport bottom ──────
+// A fixed calc(100vh - Npx) can't know how tall the content above the table
+// is, so measure the table's real position and fit it to the remaining space.
+(function() {
+  const el = document.getElementById('forecast-scroll');
+  if (!el) return;
+  function size() {
+    if (!el.offsetParent) return;               // tab is hidden — skip
+    const top = el.getBoundingClientRect().top;
+    const h = window.innerHeight - top - 24;    // 24px breathing room at bottom
+    if (h > 200) el.style.maxHeight = h + 'px';
+  }
+  window.addEventListener('resize', size);
+  document.querySelectorAll('button[data-bs-toggle="tab"], button[data-bs-toggle="pill"]')
+    .forEach(b => b.addEventListener('shown.bs.tab', size));
+  size();
+})();
+
+// ── Forecast table: collapse days before today ──────────────────────────────
+// Past rows start hidden so today's row is at the top; the divider row above
+// them toggles visibility.
+(function() {
+  const toggle = document.getElementById('past-days-toggle');
+  if (!toggle) return;
+  const label = document.getElementById('past-days-label');
+  const caret = document.getElementById('past-days-caret');
+  const count = toggle.dataset.count;
+  toggle.addEventListener('click', () => {
+    const rows = document.querySelectorAll('.past-day-row');
+    const isHidden = rows.length && rows[0].style.display === 'none';
+    rows.forEach(r => r.style.display = isHidden ? '' : 'none');
+    label.textContent = isHidden
+      ? 'Hide earlier days'
+      : 'Show ' + count + ' earlier day' + (count === '1' ? '' : 's');
+    caret.style.transform = isHidden ? 'rotate(90deg)' : '';
+  });
+})();
+</script>
+{% endblock %}

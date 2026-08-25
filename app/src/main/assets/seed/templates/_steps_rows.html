@@ -1,0 +1,62 @@
+{# <tr> rows for the steps table. Used inline and via AJAX fetch.
+   Caller provides `entries`. #}
+{% for e in entries %}
+<tr>
+  <td>
+    {% if e.is_today %}<span class="badge bg-primary me-1">Today</span>{% endif %}
+    <span class="{{ 'fw-semibold' if e.is_today else 'text-secondary' }}">{{ e.date }}</span>
+  </td>
+  <td>
+    <form method="post" action="/steps/{{ e.date }}"
+          class="steps-form d-flex gap-2 align-items-center"
+          data-locked="{{ '1' if e.is_locked else '0' }}">
+      <input type="hidden" name="return_to" value="index">
+      {% if e.is_locked %}
+        <span class="locked-value fw-semibold">{{ "{:,}".format(e.steps) }}</span>
+        <input type="text" inputmode="numeric" name="steps" hidden
+               class="form-control form-control-sm steps-input thousands-input"
+               style="max-width:140px"
+               value="{{ '{:,}'.format(e.steps) }}" data-original="{{ e.steps }}">
+        <button type="button" class="btn btn-sm btn-outline-secondary unlock-btn"
+                title="Unlock to edit">
+          <i class="bi bi-pencil"></i>
+        </button>
+      {% else %}
+        <input type="text" inputmode="numeric" name="steps"
+               class="form-control form-control-sm steps-input thousands-input"
+               style="max-width:140px"
+               value="{{ '{:,}'.format(e.steps) }}" data-original="{{ e.steps }}">
+      {% endif %}
+      <button class="btn btn-primary btn-sm save-btn" type="submit" hidden>
+        <i class="bi bi-check-lg me-1"></i>Save
+      </button>
+      {% if e.source == 'garmin' and not e.is_locked %}
+        <span class="badge bg-secondary" style="font-size:.65rem" title="Last value came from Garmin">
+          <i class="bi bi-watch"></i> garmin
+        </span>
+      {% elif e.source == 'manual' %}
+        <span class="badge bg-dark text-secondary" style="font-size:.65rem" title="Manually edited">
+          manual
+        </span>
+      {% endif %}
+    </form>
+  </td>
+  <td class="text-secondary" style="font-size:.78rem">
+    {% if e.fetched_at %}
+      {{ e.fetched_at|relative_time }}
+    {% else %}
+      —
+    {% endif %}
+  </td>
+  <td class="text-end">
+    {% if e.step_calories %}
+    <div class="d-flex flex-column align-items-end" style="line-height:1.2">
+      <span class="ingredient-chip" style="color:#79c0ff">{{ "{:,.0f}".format(e.step_calories) }} kcal</span>
+      <small class="text-secondary" style="font-size:.7rem">
+        {{ "%.1f"|format(e.weight_kg) }} kg @ {{ "%.3f"|format(e.cps) }}/step
+      </small>
+    </div>
+    {% else %}<span class="text-secondary">—</span>{% endif %}
+  </td>
+</tr>
+{% endfor %}

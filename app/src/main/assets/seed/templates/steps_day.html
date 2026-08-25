@@ -1,0 +1,127 @@
+{% extends 'base.html' %}
+{% block title %}Steps {{ date_str }} — Hector{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-md-5">
+
+    <div class="d-flex align-items-center gap-3 mb-4 day-nav">
+      <a href="/steps/{{ prev_d }}"><i class="bi bi-chevron-left"></i></a>
+      <h5 class="mb-0 fw-bold">
+        <i class="bi bi-person-walking me-2 text-primary"></i>
+        {% if date_str == today %}Today — {% endif %}<label class="inline-date-picker">
+          <span class="date-text">{{ date_str }}</span>
+          <input type="date" id="stepsDate" value="{{ date_str }}">
+        </label>
+      </h5>
+      <a href="/steps/{{ next_d }}"><i class="bi bi-chevron-right"></i></a>
+    </div>
+
+    <div class="card">
+      <div class="card-body p-4">
+        <form method="post">
+          <div class="mb-4">
+            <label class="form-label fw-semibold" style="font-size:1rem">Steps</label>
+            <input type="text" inputmode="numeric" name="steps"
+                   class="form-control form-control-lg thousands-input"
+                   value="{{ '{:,}'.format(entry.steps if entry else 0) }}"
+                   placeholder="0" id="stepsInput">
+            {% if step_calories %}
+            <div class="form-text text-info mt-1">
+              ≈ {{ "{:,.0f}".format(step_calories) }} kcal burned
+            </div>
+            {% endif %}
+          </div>
+
+          <div class="mb-4">
+            <div class="text-secondary" style="font-size:.85rem">
+              Weight used for burn:
+              {% if current_weight %}
+              <strong class="text-body-emphasis">{{ "%.1f"|format(current_weight) }} kg</strong>
+              <span class="text-secondary">(from your most recent reading)</span>
+              {% else %}
+              <span class="text-warning">— set in Settings</span>
+              {% endif %}
+            </div>
+          </div>
+
+          {# Live calorie preview #}
+          <div class="card mb-4" style="background:var(--hx-bg)">
+            <div class="card-body p-3 text-center" id="calPreview">
+              <div class="text-secondary" style="font-size:.8rem">ESTIMATED BURN</div>
+              <div style="font-size:2rem;font-weight:700;color:#79c0ff" id="calVal">
+                {{ "%.0f"|format(step_calories) if step_calories else '—' }}
+              </div>
+              <div class="text-secondary" style="font-size:.75rem">kcal from steps</div>
+            </div>
+          </div>
+
+          <button type="submit" class="btn btn-primary w-100 py-2 fw-semibold">
+            <i class="bi bi-check-lg me-1"></i>Save
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <div class="d-flex justify-content-between mt-3">
+      <a href="/steps" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-list me-1"></i>All Steps
+      </a>
+      <a href="/overview/{{ date_str }}" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-speedometer2 me-1"></i>Overview
+      </a>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Calorie-per-step lookup table (interpolated)
+const table = [
+  [40,0.023],[45,0.026],[50,0.029],[55,0.032],[60,0.035],[65,0.038],
+  [70,0.041],[75,0.044],[80,0.047],[85,0.050],[90,0.053],[95,0.055],
+  [100,0.058],[105,0.061],[110,0.064],[115,0.067],[120,0.070],[125,0.073],[130,0.076]
+];
+
+function cps(w) {
+  if (w < 40) return 0.023;
+  if (w >= 130) return 0.076;
+  for (let i = 0; i < table.length - 1; i++) {
+    const [w1,c1] = table[i], [w2] = table[i+1];
+    if (w >= w1 && w < w2) return c1;
+  }
+  return 0.076;
+}
+
+const fixedWeight = {{ current_weight if current_weight else 0 }};
+
+const fmtThousands = v => Number(v).toLocaleString('en-US');
+const stripCommas  = s => (s || '').replace(/,/g, '').trim();
+
+const stepsInput = document.getElementById('stepsInput');
+
+function update() {
+  const raw = stripCommas(stepsInput.value);
+  const steps = parseFloat(raw) || 0;
+  const calEl  = document.getElementById('calVal');
+  if (steps > 0 && fixedWeight > 0) {
+    calEl.textContent = (steps * cps(fixedWeight)).toLocaleString('en-US', {maximumFractionDigits: 0});
+  } else {
+    calEl.textContent = '—';
+  }
+}
+
+stepsInput.addEventListener('input', update);
+stepsInput.addEventListener('focus', () => { stepsInput.value = stripCommas(stepsInput.value); });
+stepsInput.addEventListener('blur', () => {
+  const v = stripCommas(stepsInput.value);
+  if (v && !isNaN(parseInt(v, 10))) stepsInput.value = fmtThousands(parseInt(v, 10));
+});
+// Strip commas right before submit so Flask sees a plain integer
+stepsInput.form.addEventListener('submit', () => { stepsInput.value = stripCommas(stepsInput.value); });
+
+document.getElementById('stepsDate').addEventListener('change', function() {
+  if (this.value) window.location = '/steps/' + this.value;
+});
+</script>
+{% endblock %}

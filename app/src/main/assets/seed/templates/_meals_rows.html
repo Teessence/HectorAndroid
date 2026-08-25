@@ -1,0 +1,76 @@
+{# Renders <tr> rows for the meals/recipes table. Used both inline and via
+   AJAX fetch. Caller provides: meals (iterable), targets (dict). #}
+
+{% macro val_pct(value, target, fmt='%.1f') -%}
+  {%- if value -%}
+    {{ fmt|format(value) }}{%- if target and target > 0 -%}
+      <span class="text-secondary" style="font-size:.7rem">&nbsp;({{ "%.1f"|format(value / target * 100) }}%)</span>
+    {%- endif -%}
+  {%- else -%}—{%- endif -%}
+{% endmacro %}
+
+{% macro nutr_cell(total, yields, target, fmt='%.1f') -%}
+  {%- if total -%}
+    <div>{{ val_pct(total, target, fmt) }}</div>
+    <div style="font-size:.68rem;line-height:1.15;opacity:.75">
+      {{ val_pct(total / yields, target, fmt) }}/serving
+    </div>
+  {%- else -%}—{%- endif -%}
+{%- endmacro %}
+
+{% for m in meals %}
+{% set y = m.yields or 1 %}
+{% set cps_meal = (m.total_cost / y) if y else m.total_cost %}
+<tr data-href="/meals/{{ m.id }}/edit" style="cursor:pointer">
+  <td class="fw-semibold meal-name-cell" style="min-width:180px;max-width:260px">
+    <div class="d-flex align-items-center gap-2">
+      {% if m.image_filename %}
+      <img src="/static/ingredient_images/{{ m.image_filename }}"
+           style="width:72px;height:72px;object-fit:contain;border-radius:8px;border:1px solid var(--hx-border);background:var(--hx-bg);padding:3px;flex-shrink:0">
+      {% else %}
+      <div style="width:72px;height:72px;border-radius:8px;border:1px solid var(--hx-border);background:var(--hx-panel2);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+        <i class="bi bi-journal-text text-secondary" style="font-size:1.5rem"></i>
+      </div>
+      {% endif %}
+      <span class="meal-name-text" title="{{ m.name }}">{{ m.name }}</span>
+    </div>
+  </td>
+  <td class="text-center text-secondary" style="white-space:nowrap">{{ "%g"|format(y) }}</td>
+  <td class="text-center text-secondary" style="white-space:nowrap;font-size:.78rem"
+      title="{{ m.last_eaten }}">
+    {{ m.last_eaten | relative_time or '—' }}
+  </td>
+  <td class="text-center" style="white-space:nowrap">
+    <span style="color:#bc8cff">€{{ "%.2f"|format(m.total_cost) }}</span>
+    <br><span class="text-secondary" style="font-size:.72rem">€{{ "%.2f"|format(cps_meal) }}/serving</span>
+  </td>
+  {# Nutrition — total on top, per-serving below #}
+  <td class="text-center" style="color:#79c0ff;white-space:nowrap">{{ nutr_cell(m.total_calories, y, targets.calories, '%.0f') }}</td>
+  <td class="text-center" style="color:#56d364;white-space:nowrap">{{ nutr_cell(m.total_protein, y, targets.protein, '%.1f') }}</td>
+  <td class="text-center" style="color:#56d364;white-space:nowrap">
+    {% if m.total_calories and m.total_calories > 0 %}
+      {{ "%.3f"|format(m.total_protein / m.total_calories) }}
+    {% else %}—{% endif %}
+  </td>
+  <td class="text-center" style="color:#ffa657;white-space:nowrap">{{ nutr_cell(m.total_fat, y, targets.fat, '%.1f') }}</td>
+  <td class="text-center" style="color:#ff7b72;font-size:.78rem;white-space:nowrap">{{ nutr_cell(m.total_saturates, y, targets.saturates, '%.1f') }}</td>
+  <td class="text-center" style="color:#e3b341;white-space:nowrap">{{ nutr_cell(m.total_carbs, y, targets.carbs, '%.1f') }}</td>
+  <td class="text-center text-secondary" style="white-space:nowrap">{{ nutr_cell(m.total_fiber, y, targets.fiber, '%.1f') }}</td>
+  <td class="text-center text-secondary" style="white-space:nowrap">{{ nutr_cell(m.total_sugar, y, targets.sugar, '%.1f') }}</td>
+  <td class="text-center text-secondary" style="white-space:nowrap">{{ nutr_cell(m.total_salt, y, targets.salt, '%.2f') }}</td>
+  {# Vitamins #}
+  {% for col in ['vit_a','vit_c','vit_d','vit_e','vit_k','vit_b1','vit_b2','vit_b3','vit_b6','vit_b9','vit_b12'] %}
+  <td class="text-center" style="color:#bc8cff;white-space:nowrap">{{ nutr_cell(m['total_' ~ col], y, targets[col], '%.2f') }}</td>
+  {% endfor %}
+  {# Minerals #}
+  {% for col in ['calcium','iron','magnesium','phosphorus','potassium','zinc','selenium','iodine','copper','manganese'] %}
+  <td class="text-center" style="color:#ffa657;white-space:nowrap">{{ nutr_cell(m['total_' ~ col], y, targets[col], '%.2f') }}</td>
+  {% endfor %}
+  <td class="text-center" onclick="event.stopPropagation()">
+    <form method="post" action="/meals/{{ m.id }}/delete"
+          onsubmit="return confirm('Delete recipe {{ m.name }}?')">
+      <button class="btn btn-sm btn-outline-danger py-0 px-2"><i class="bi bi-trash"></i></button>
+    </form>
+  </td>
+</tr>
+{% endfor %}

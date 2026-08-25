@@ -1,0 +1,894 @@
+{% extends 'base.html' %}
+{% block title %}Diary {{ date_str }} — Hector{% endblock %}
+{% block content %}
+
+<link href="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/css/tom-select.bootstrap5.min.css" rel="stylesheet">
+
+<style>
+  /* Each slot's items table: cap at ~7-8 rows of 72px thumbnails (2.5× the
+     previous 3-row cap), sticky header. */
+  .slot-scroll { max-height: 725px; overflow: auto; }
+  .slot-scroll thead th {
+    position: sticky; top: 0; z-index: 2;
+    background: var(--hx-panel);  /* matches card bg so content doesn't bleed through */
+  }
+
+  /* Fixed bottom summary panel */
+  body { padding-bottom: 96px; }
+  .day-summary-fixed {
+    position: fixed; left: 0; right: 0; bottom: 0;
+    background: var(--hx-panel); border-top: 2px solid var(--hx-border);
+    box-shadow: 0 -6px 18px rgba(0,0,0,.45);
+    z-index: 100; max-height: 60vh; overflow: auto;
+  }
+  .day-summary-fixed .card-body { padding: .75rem 1rem; }
+  .day-summary-fixed table { font-size: .82rem; margin-bottom: 0; }
+  .day-summary-fixed .vmrow { font-size: .72rem; }
+  /* Caret rotates when the summary is expanded */
+  .summary-header[aria-expanded="false"] .summary-caret { transform: rotate(180deg); }
+  .summary-header[aria-expanded="true"]  .summary-caret { transform: rotate(0deg); }
+
+  /* Per-slot header caret — now keyed off the toggle button, not the whole header */
+  .slot-toggle[aria-expanded="false"] .slot-caret { transform: rotate(180deg); }
+  .slot-toggle[aria-expanded="true"]  .slot-caret { transform: rotate(0deg); }
+  .slot-toggle:hover { color: #58a6ff !important; }
+
+  /* Per-slot full breakdown grid */
+  .nutrient-grid { font-size:.78rem; }
+  .nutrient-grid .col-6 > div:first-child { color:#8b949e; }
+
+  /* Searchable input styling */
+  .item-search { min-width: 280px; }
+  .saving-indicator { font-size:.72rem; }
+
+  /* Tom Select tweaks to match the dark theme */
+  .ts-wrapper { min-width: 320px; }
+  .ts-control { background: var(--hx-bg) !important; border-color: var(--hx-border) !important; color: var(--hx-text) !important; min-height: calc(1.5em + .5rem + 2px) !important; }
+  .ts-control input, .ts-control .item { color: var(--hx-text) !important; }
+
+  /* Lock the Add Food row so picking an item / typing servings doesn't reflow it.
+     The dropdown stays at a fixed 360px and long selected labels truncate with
+     ellipsis instead of stretching the control. The servings field reserves
+     its own slot so it never jumps. */
+  .add-food-form .item-search-wrap { flex: 0 0 450px; min-width: 450px; max-width: 450px; }
+  .add-food-form .ts-wrapper { width: 100%; min-width: 0; }
+  .add-food-form .ts-control { overflow: hidden; }
+  .add-food-form .ts-control .item {
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    max-width: 100%; display: inline-block;
+  }
+  /* Wide enough for the number + the input-group unit suffix (g, ml, mcg, …). */
+  .add-food-form .amount-wrap   { flex: 0 0 140px; }
+  .add-food-form .servings-wrap { flex: 0 0 110px; }
+
+  /* Combobox behavior: when an item is already selected and the dropdown is
+     NOT open, hide the search input entirely so only the selected pill is
+     visible (no caret on a second line, no "Search…" prompt). When the user
+     opens the dropdown, hide the selected item and let the input take the
+     row with its placeholder ("Search recipes or ingredients…"). After a
+     pick, Tom Select closes the dropdown, the input disappears again, and
+     the new selection is shown. */
+  .add-food-form .ts-wrapper.single.has-items:not(.dropdown-active) .ts-control > input {
+    position: absolute !important;
+    width: 1px !important; height: 1px !important; padding: 0 !important;
+    opacity: 0 !important; pointer-events: none !important;
+  }
+  .add-food-form .ts-wrapper.single.dropdown-active .ts-control > .item { display: none !important; }
+  .add-food-form .ts-wrapper.single.dropdown-active .ts-control > input {
+    position: static !important;
+    width: 100% !important; height: auto !important;
+    padding: 0 !important; opacity: 1 !important; pointer-events: auto !important;
+  }
+  .ts-dropdown { background: var(--hx-panel) !important; border-color: var(--hx-border) !important; color: var(--hx-text) !important; }
+  .ts-dropdown .option, .ts-dropdown .optgroup-header { color: var(--hx-text) !important; }
+  .ts-dropdown .optgroup-header { background: var(--hx-panel2) !important; color: #8b949e !important; text-transform: uppercase; letter-spacing: .06em; font-size: .72rem; }
+  .ts-dropdown .active { background: #1f6feb !important; color: #fff !important; }
+</style>
+
+{# ── Date navigation ── #}
+<div class="d-flex align-items-center gap-3 mb-4 day-nav flex-wrap">
+  <a href="/diary/{{ prev_d }}"><i class="bi bi-chevron-left"></i></a>
+  <h5 class="mb-0 fw-bold">
+    <i class="bi bi-journal-check me-2 text-info"></i>Diary —
+    {% if date_str == today %}Today, {% elif date_str == yesterday %}Yesterday, {% elif date_str == tomorrow %}Tomorrow, {% endif %}<label class="inline-date-picker">
+      <span class="date-text">{{ date_str }}</span>
+      <input type="date" id="diaryDate" value="{{ date_str }}">
+    </label>
+  </h5>
+  <a href="/diary/{{ next_d }}"><i class="bi bi-chevron-right"></i></a>
+</div>
+
+
+{# Helpers used in multiple places #}
+{% set MACROS = [
+  ('calories','Calories','',    '#79c0ff','%.0f'),
+  ('protein', 'Protein', 'g',   '#56d364','%.1f'),
+  ('carbs',   'Carbohydrates', 'g', '#e3b341','%.1f'),
+  ('fat',     'Fat',     'g',   '#ffa657','%.1f'),
+  ('saturates','Saturates','g', '#ff7b72','%.1f'),
+  ('fiber',   'Fiber',   'g',   '#8b949e','%.1f'),
+  ('sugar',   'Sugar',   'g',   '#8b949e','%.1f'),
+  ('salt',    'Salt',    'g',   '#8b949e','%.2f'),
+] %}
+{% set VITS = [
+  ('vit_a','Vitamin A','μg'),('vit_c','Vitamin C','mg'),('vit_d','Vitamin D','μg'),
+  ('vit_e','Vitamin E','mg'),('vit_k','Vitamin K','μg'),
+  ('vit_b1','B1','mg'),('vit_b2','B2','mg'),('vit_b3','B3','mg'),
+  ('vit_b6','B6','mg'),('vit_b9','B9','μg'),('vit_b12','B12','μg'),
+] %}
+{% set MINS = [
+  ('calcium','Calcium','mg'),('iron','Iron','mg'),('magnesium','Magnesium','mg'),
+  ('phosphorus','Phosphorus','mg'),('potassium','Potassium','mg'),('zinc','Zinc','mg'),
+  ('selenium','Selenium','μg'),('iodine','Iodine','μg'),('copper','Copper','mg'),
+  ('manganese','Manganese','mg'),
+] %}
+
+{# Shared nutrient cell — used by per-slot full breakdown AND day summary.
+   Renders label / value / target / % + a progress bar. Compares the given
+   totals against the *daily* targets (so a single slot shows what % of the
+   day's goal that meal contributed). #}
+{% macro vm_item(totals, col, label, unit, color='#388bfd') %}
+  {% set v = totals[col] %}
+  {% set t = targets[col] %}
+  {% set p = (v / t * 100) if (t and t > 0) else 0 %}
+  <div class="col-6 col-md-4">
+    <div class="d-flex justify-content-between">
+      <span class="text-secondary">{{ label }}{% if unit %} ({{ unit }}){% endif %}</span>
+      <span>{{ "%.1f"|format(v) }} / {{ "%.0f"|format(t) if t else '—' }}
+        {% if t and t > 0 %}<span class="text-secondary">({{ "%.0f"|format(p) }}%)</span>{% endif %}
+      </span>
+    </div>
+    <div class="progress" style="height:4px">
+      <div class="progress-bar" style="width:{{ p if p <= 100 else 100 }}%;background:{{ '#56d364' if p >= 100 else color }}"></div>
+    </div>
+  </div>
+{% endmacro %}
+
+{# ── Slot cards ── #}
+{% for n in range(1, slot_count + 1) %}
+{% set slot = slots[n] %}
+{% set is_expanded = (n == first_empty_slot) %}
+<div class="card mb-3">
+  <div class="meal-header d-flex justify-content-between align-items-center slot-header">
+    <span class="fw-bold d-flex align-items-center gap-2 flex-grow-1" style="min-width:0">
+      {# Only this button toggles the collapse — clicks elsewhere in the header
+         (the note input, status text, macros, Save-as-recipe button) don't. #}
+      <button type="button"
+              class="btn btn-link p-0 text-decoration-none slot-toggle text-nowrap"
+              data-bs-toggle="collapse" data-bs-target="#slot-{{ n }}-body"
+              aria-expanded="{{ 'true' if is_expanded else 'false' }}"
+              aria-controls="slot-{{ n }}-body"
+              data-slot="{{ n }}"
+              style="color:var(--hx-text);font-weight:700">
+        <i class="bi bi-chevron-up slot-caret me-1" style="transition:transform .2s"></i>
+        Meal {{ n }}
+      </button>
+      <input type="text" class="form-control form-control-sm slot-note-input"
+             data-slot="{{ n }}" maxlength="500"
+             placeholder="Add note…" value="{{ slot.note }}"
+             style="font-weight:400;max-width:360px;min-width:120px">
+      <span class="slot-note-status text-secondary" style="font-size:.7rem;font-weight:400"></span>
+      {% if not slot.entries %}
+        <span class="text-secondary ms-1" style="font-weight:400;font-size:.78rem">— empty</span>
+      {% endif %}
+    </span>
+    {% if slot.entries %}
+    <span style="font-size:.85rem">
+      <span style="color:#79c0ff">{{ "{:,.0f}".format(slot.totals.calories) }} Calories</span>
+      <span class="text-secondary">&nbsp;·&nbsp;</span>
+      <span style="color:#56d364">Protein {{ "%.1f"|format(slot.totals.protein) }}g</span>
+      <span class="text-secondary">&nbsp;·&nbsp;</span>
+      <span style="color:#e3b341">Carbohydrates {{ "%.1f"|format(slot.totals.carbs) }}g</span>
+      <span class="text-secondary">&nbsp;·&nbsp;</span>
+      <span style="color:#ffa657">Fat {{ "%.1f"|format(slot.totals.fat) }}g</span>
+      <span class="text-secondary">&nbsp;·&nbsp;</span>
+      <span class="text-secondary">Fiber {{ "%.1f"|format(slot.totals.fiber) }}g</span>
+      <span class="text-secondary">&nbsp;·&nbsp;</span>
+      <span style="color:#bc8cff">€{{ "%.2f"|format(slot.totals.cost) }}</span>
+      <button type="button" class="btn btn-sm btn-outline-info ms-2 save-as-recipe-btn"
+              data-bs-toggle="modal" data-bs-target="#saveRecipeModal"
+              data-slot="{{ n }}" title="Save this meal as a recipe">
+        <i class="bi bi-bookmark-plus me-1"></i>Save as recipe
+      </button>
+    </span>
+    {% endif %}
+  </div>
+
+  <div id="slot-{{ n }}-body" class="collapse{{ ' show' if is_expanded else '' }}">
+
+  {% if slot.entries %}
+  <div class="slot-scroll">
+    <table class="table table-sm align-middle mb-0">
+      <thead>
+        <tr>
+          <th style="width:40%">Item</th>
+          <th class="text-end">Amount</th>
+          <th class="text-end">Servings</th>
+          <th class="text-end" style="color:#79c0ff">Calories</th>
+          <th class="text-end" style="color:#56d364">Protein</th>
+          <th class="text-end" style="color:#e3b341">Carbohydrates</th>
+          <th class="text-end" style="color:#ffa657">Fat</th>
+          <th class="text-end text-secondary">Fiber</th>
+          <th class="text-end" style="color:#bc8cff">Cost</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in slot.entries %}
+        <tr>
+          <td>
+            <div class="d-flex align-items-center gap-2">
+              {% if e.image_filename %}
+              <img src="/static/ingredient_images/{{ e.image_filename }}"
+                   style="width:72px;height:72px;object-fit:contain;border-radius:8px;border:1px solid var(--hx-border);background:var(--hx-bg);padding:3px;flex-shrink:0">
+              {% else %}
+              <div style="width:72px;height:72px;border-radius:8px;border:1px solid var(--hx-border);background:var(--hx-panel2);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                <i class="bi bi-{{ 'journal-text text-info' if e.kind == 'meal' else 'basket text-secondary' }}"
+                   title="{{ 'Recipe' if e.kind == 'meal' else 'Ingredient' }}"
+                   style="font-size:1.5rem"></i>
+              </div>
+              {% endif %}
+              <div style="min-width:0">
+                <div>
+                  <span class="fw-semibold">{{ e.label }}</span>
+                  <span class="text-secondary" style="font-size:.78rem">&nbsp;{{ e.detail }}</span>
+                </div>
+                {% if e.company or e.shop %}
+                <div class="text-secondary" style="font-size:.7rem;margin-top:2px">
+                  {% if e.company %}<i class="bi bi-tag me-1"></i>{{ e.company }}{% endif %}
+                  {% if e.company and e.shop %} · {% endif %}
+                  {% if e.shop %}<i class="bi bi-shop me-1"></i>{{ e.shop }}{% endif %}
+                </div>
+                {% endif %}
+              </div>
+            </div>
+          </td>
+          <td class="text-end">
+            {% if e.serving_size %}
+            <div class="input-group input-group-sm row-amount-group d-inline-flex"
+                 style="width:130px" data-entry-id="{{ e.id }}">
+              <input type="number" class="form-control form-control-sm text-end row-amount-input"
+                     step="any" min="0" value="{{ '%g'|format(e.servings * e.serving_size) }}">
+              <span class="input-group-text">{{ e.unit }}</span>
+            </div>
+            {% else %}
+            <span class="text-secondary">—</span>
+            {% endif %}
+          </td>
+          <td class="text-end">
+            <form class="servings-form d-inline-flex align-items-center gap-1"
+                  data-entry-id="{{ e.id }}" data-slot="{{ n }}"
+                  {% if e.serving_size %}data-serving-size="{{ e.serving_size }}"{% endif %}>
+              <input type="number" name="servings" value="{{ '%g'|format(e.servings) }}"
+                     step="any" min="0.01" class="form-control form-control-sm text-end"
+                     style="width:90px">
+              <span class="saving-indicator text-secondary"></span>
+            </form>
+          </td>
+          <td class="text-end">{{ "%.0f"|format(e.totals.calories) }}</td>
+          <td class="text-end">{{ "%.1f"|format(e.totals.protein) }}g</td>
+          <td class="text-end">{{ "%.1f"|format(e.totals.carbs) }}g</td>
+          <td class="text-end">{{ "%.1f"|format(e.totals.fat) }}g</td>
+          <td class="text-end text-secondary">{{ "%.1f"|format(e.totals.fiber) }}g</td>
+          <td class="text-end">€{{ "%.2f"|format(e.totals.cost) }}</td>
+          <td class="text-end">
+            <form method="post" action="/diary-entries/{{ e.id }}/delete"
+                  onsubmit="return confirm('Remove this entry?')">
+              <button class="btn btn-sm btn-link text-danger p-0">
+                <i class="bi bi-x-circle"></i>
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {# Per-slot full nutrient breakdown — same tinted sections + progress bars as the day summary #}
+  <details class="border-top border-secondary">
+    <summary class="text-secondary p-2 ps-3" style="cursor:pointer;font-size:.82rem">
+      <i class="bi bi-clipboard-data me-1"></i>Full breakdown — Meal {{ n }}
+    </summary>
+    <div class="p-3 pt-2">
+      <div class="nutri-section nutri-nutrition">
+        <div class="text-secondary mb-2" style="font-size:.72rem;text-transform:uppercase;letter-spacing:.08em">
+          <i class="bi bi-pie-chart me-1"></i>Nutrition
+        </div>
+        <div class="row g-2 vmrow">
+          {% for col, label, unit, color, fmt in MACROS %}{{ vm_item(slot.totals, col, label, unit, color) }}{% endfor %}
+        </div>
+      </div>
+
+      {# Same sort-by-%-of-target rule as the day summary, applied to this
+         slot's totals. Items with no/zero target sink to the bottom. #}
+      {% set slot_vits_sorted = [] %}
+      {% for col, label, unit in VITS %}
+        {%- set pct = (slot.totals[col] / targets[col] * 100) if (targets[col] and targets[col] > 0) else -1 -%}
+        {%- set _ = slot_vits_sorted.append((pct, col, label, unit)) -%}
+      {% endfor %}
+      {% set slot_vits_sorted = slot_vits_sorted|sort(reverse=true) %}
+
+      {% set slot_mins_sorted = [] %}
+      {% for col, label, unit in MINS %}
+        {%- set pct = (slot.totals[col] / targets[col] * 100) if (targets[col] and targets[col] > 0) else -1 -%}
+        {%- set _ = slot_mins_sorted.append((pct, col, label, unit)) -%}
+      {% endfor %}
+      {% set slot_mins_sorted = slot_mins_sorted|sort(reverse=true) %}
+
+      <div class="row g-2 mt-3">
+        <div class="col-md-6">
+          <div class="nutri-section nutri-vitamins h-100">
+            <div class="text-secondary mb-2" style="font-size:.72rem;text-transform:uppercase;letter-spacing:.08em">
+              <i class="bi bi-capsule me-1"></i>Vitamins
+            </div>
+            <div class="row g-2 vmrow">
+              {% for _pct, col, label, unit in slot_vits_sorted %}{{ vm_item(slot.totals, col, label, unit) }}{% endfor %}
+            </div>
+          </div>
+        </div>
+        <div class="col-md-6">
+          <div class="nutri-section nutri-minerals h-100">
+            <div class="text-secondary mb-2" style="font-size:.72rem;text-transform:uppercase;letter-spacing:.08em">
+              <i class="bi bi-moisture me-1"></i>Minerals
+            </div>
+            <div class="row g-2 vmrow">
+              {% for _pct, col, label, unit in slot_mins_sorted %}{{ vm_item(slot.totals, col, label, unit) }}{% endfor %}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </details>
+  {% endif %}
+
+  {# Add Food row — searchable dropdown (Tom Select wraps the <select>) #}
+  <div class="p-3 border-top border-secondary" id="slot-{{ n }}-addfood">
+    <form method="post" action="/diary/{{ date_str }}/add" class="add-food-form d-flex flex-wrap gap-2 align-items-end">
+      <input type="hidden" name="slot" value="{{ n }}">
+      <div class="item-search-wrap">
+        <label class="form-label form-label-sm mb-1">Add ingredient or meal</label>
+        <select name="item" class="form-select form-select-sm item-search" required>
+          <option value="">— select —</option>
+          {% if all_meals %}
+          <optgroup label="Recipes">
+            {% for m in all_meals %}
+            <option value="meal:{{ m.id }}">{{ m.name }}</option>
+            {% endfor %}
+          </optgroup>
+          {% endif %}
+          <optgroup label="Ingredients">
+            {% for i in all_ings %}
+            {% set tags = [] %}
+            {% if i.company %}{% set _ = tags.append(i.company) %}{% endif %}
+            {% if i.shop %}{% set _ = tags.append(i.shop) %}{% endif %}
+            <option value="ingredient:{{ i.id }}"
+                    data-serving-size="{{ i.serving_size }}"
+                    data-unit="{{ i.unit }}">{{ i.name }}{% if tags %} — {{ tags | join(' · ') }}{% endif %} ({{ i.serving_size }}{{ i.unit }}/serving)</option>
+            {% endfor %}
+          </optgroup>
+        </select>
+      </div>
+      <div class="amount-wrap">
+        <label class="form-label form-label-sm mb-1">Amount</label>
+        <div class="input-group input-group-sm">
+          <input type="number" class="form-control form-control-sm amount-input"
+                 step="any" min="0" value="" placeholder="—">
+          <span class="input-group-text amount-unit-suffix" style="display:none"></span>
+        </div>
+      </div>
+      <div class="servings-wrap">
+        <label class="form-label form-label-sm mb-1">Servings</label>
+        <input type="number" name="servings" class="form-control form-control-sm"
+               style="width:100%" step="any" min="0.01" value="1" required>
+      </div>
+      <button class="btn btn-primary btn-sm"><i class="bi bi-plus-lg me-1"></i>Add Food</button>
+    </form>
+  </div>
+  </div>{# /slot-N-body collapse #}
+</div>
+{% endfor %}
+
+{# ── Fixed bottom: day summary (collapsible — collapsed by default) ── #}
+<div class="day-summary-fixed">
+  <div class="card-body">
+
+    {# Always-visible header bar: click anywhere to toggle. #}
+    <div class="summary-header d-flex flex-wrap justify-content-between align-items-center gap-2"
+         data-bs-toggle="collapse" data-bs-target="#summaryDetails"
+         aria-expanded="false" aria-controls="summaryDetails"
+         role="button" style="cursor:pointer">
+      <div class="d-flex align-items-center gap-3 flex-wrap">
+        <h6 class="fw-bold mb-0">
+          <i class="bi bi-chevron-up summary-caret me-1"
+             style="transition:transform .2s"></i>
+          <i class="bi bi-calculator me-1"></i>Summary
+        </h6>
+        <span class="text-secondary d-none d-md-inline" style="font-size:.78rem">
+          {# Compact macros visible while collapsed #}
+          <span style="color:#79c0ff">{{ "{:,.0f}".format(day_totals.calories) }} kcal</span>
+          {% if targets.calories %}
+            <span class="text-secondary">/ {{ "%.0f"|format(targets.calories) }}</span>
+          {% endif %}
+          &nbsp;·&nbsp;
+          <span style="color:#56d364">Protein {{ "%.1f"|format(day_totals.protein) }}g</span>
+          &nbsp;·&nbsp;
+          <span style="color:#e3b341">Carbohydrates {{ "%.1f"|format(day_totals.carbs) }}g</span>
+          &nbsp;·&nbsp;
+          <span style="color:#ffa657">Fat {{ "%.1f"|format(day_totals.fat) }}g</span>
+          &nbsp;·&nbsp;
+          <span class="text-secondary">Fiber {{ "%.1f"|format(day_totals.fiber) }}g</span>
+        </span>
+      </div>
+      <span class="ingredient-chip" style="color:#bc8cff;font-size:.85rem">
+        <i class="bi bi-currency-euro me-1"></i>Total cost: €{{ "%.2f"|format(day_totals.cost) }}
+      </span>
+    </div>
+
+    {# Compact macros on small screens — shown below header when collapsed too. #}
+    <div class="text-secondary d-md-none mt-2" style="font-size:.78rem">
+      <span style="color:#79c0ff">{{ "{:,.0f}".format(day_totals.calories) }} kcal</span>
+      &nbsp;·&nbsp;
+      <span style="color:#56d364">Protein {{ "%.1f"|format(day_totals.protein) }}g</span>
+      &nbsp;·&nbsp;
+      <span style="color:#e3b341">Carbohydrates {{ "%.1f"|format(day_totals.carbs) }}g</span>
+      &nbsp;·&nbsp;
+      <span style="color:#ffa657">Fat {{ "%.1f"|format(day_totals.fat) }}g</span>
+      &nbsp;·&nbsp;
+      <span class="text-secondary">Fiber {{ "%.1f"|format(day_totals.fiber) }}g</span>
+    </div>
+
+    {# Sort vitamins/minerals by % of daily target, descending. Items with
+       no target (or zero target) get pct=-1 so they fall to the bottom. #}
+    {% set vits_sorted = [] %}
+    {% for col, label, unit in VITS %}
+      {%- set pct = (day_totals[col] / targets[col] * 100) if (targets[col] and targets[col] > 0) else -1 -%}
+      {%- set _ = vits_sorted.append((pct, col, label, unit)) -%}
+    {% endfor %}
+    {% set vits_sorted = vits_sorted|sort(reverse=true) %}
+
+    {% set mins_sorted = [] %}
+    {% for col, label, unit in MINS %}
+      {%- set pct = (day_totals[col] / targets[col] * 100) if (targets[col] and targets[col] > 0) else -1 -%}
+      {%- set _ = mins_sorted.append((pct, col, label, unit)) -%}
+    {% endfor %}
+    {% set mins_sorted = mins_sorted|sort(reverse=true) %}
+
+    {# Collapsible details — full Nutrition + Vitamins + Minerals. #}
+    <div class="collapse" id="summaryDetails">
+      <div class="nutri-section nutri-nutrition mt-3">
+        <div class="text-secondary mb-2" style="font-size:.72rem;text-transform:uppercase;letter-spacing:.08em">
+          <i class="bi bi-pie-chart me-1"></i>Nutrition
+        </div>
+        <div class="row g-2 vmrow">
+          {% for col, label, unit, color, fmt in MACROS %}{{ vm_item(day_totals, col, label, unit, color) }}{% endfor %}
+        </div>
+      </div>
+
+      <div class="row g-2 mt-3">
+        <div class="col-md-6">
+          <div class="nutri-section nutri-vitamins h-100">
+            <div class="text-secondary mb-2" style="font-size:.72rem;text-transform:uppercase;letter-spacing:.08em">
+              <i class="bi bi-capsule me-1"></i>Vitamins
+            </div>
+            <div class="row g-2 vmrow">
+              {% for _pct, col, label, unit in vits_sorted %}{{ vm_item(day_totals, col, label, unit) }}{% endfor %}
+            </div>
+          </div>
+        </div>
+        <div class="col-md-6">
+          <div class="nutri-section nutri-minerals h-100">
+            <div class="text-secondary mb-2" style="font-size:.72rem;text-transform:uppercase;letter-spacing:.08em">
+              <i class="bi bi-moisture me-1"></i>Minerals
+            </div>
+            <div class="row g-2 vmrow">
+              {% for _pct, col, label, unit in mins_sorted %}{{ vm_item(day_totals, col, label, unit) }}{% endfor %}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Save-as-recipe modal (shared across slots; slot # is set on open) ── #}
+<div class="modal fade" id="saveRecipeModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <form method="post" id="saveRecipeForm" class="modal-content">
+      <div class="modal-header">
+        <h6 class="modal-title">
+          <i class="bi bi-bookmark-plus me-1 text-info"></i>
+          Save Meal <span id="saveRecipeSlotLabel">—</span> as recipe
+        </h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="text-secondary mb-3" style="font-size:.85rem">
+          Captures the ingredient amounts currently in this meal slot. The diary
+          entry isn't touched — you can edit the new recipe in the Recipes library.
+        </p>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Recipe name</label>
+          <input type="text" name="name" class="form-control" required
+                 placeholder="e.g. Saturday breakfast bowl">
+        </div>
+        <div class="mb-1">
+          <label class="form-label fw-semibold">Yields (servings)</label>
+          <input type="number" name="yields" class="form-control"
+                 step="any" min="0.01" value="1">
+          <div class="form-text">How many servings this recipe makes.</div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="submit" class="btn btn-primary">
+          <i class="bi bi-check-lg me-1"></i>Save Recipe
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/js/tom-select.complete.min.js"></script>
+<script>
+// Date jump
+document.getElementById('diaryDate').addEventListener('change', function() {
+  if (this.value) window.location = '/diary/' + this.value;
+});
+
+// Per-slot note auto-save (debounced on input, immediate on blur).
+document.querySelectorAll('.slot-note-input').forEach(input => {
+  const slot = input.dataset.slot;
+  const status = input.parentElement.querySelector('.slot-note-status');
+  const original = input.value;
+  let timer;
+  let lastSaved = original;
+  const setStatus = (text, color) => {
+    if (!status) return;
+    status.textContent = text || '';
+    status.style.color = color || '#8b949e';
+  };
+  const save = async () => {
+    const val = input.value.trim();
+    if (val === lastSaved) return;
+    setStatus('saving…');
+    try {
+      const fd = new FormData();
+      fd.append('note', val);
+      const res = await fetch('/diary/{{ date_str }}/slot/' + slot + '/note', {
+        method: 'POST',
+        body: fd,
+        headers: { 'X-Requested-With': 'fetch' },
+      });
+      if (res.ok) {
+        lastSaved = val;
+        setStatus('saved', '#3fb950');
+        setTimeout(() => setStatus(''), 1500);
+      } else {
+        setStatus('error', '#f85149');
+      }
+    } catch (err) {
+      setStatus('error', '#f85149');
+    }
+  };
+  input.addEventListener('input', () => {
+    clearTimeout(timer);
+    timer = setTimeout(save, 700);
+  });
+  input.addEventListener('blur', () => {
+    clearTimeout(timer);
+    save();
+  });
+  // Don't let the Enter key submit the (non-existent) wrapping form — just save and blur.
+  input.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter') {
+      ev.preventDefault();
+      input.blur();
+    }
+  });
+});
+
+// Save-as-recipe modal: stamp the slot number into the form's action + title.
+(function() {
+  const modal = document.getElementById('saveRecipeModal');
+  if (!modal) return;
+  const form  = document.getElementById('saveRecipeForm');
+  const label = document.getElementById('saveRecipeSlotLabel');
+  modal.addEventListener('show.bs.modal', function(ev) {
+    const btn  = ev.relatedTarget;
+    const slot = btn ? btn.dataset.slot : '1';
+    label.textContent = slot;
+    form.action = '/diary/{{ date_str }}/slot/' + slot + '/save-as-recipe';
+    form.querySelector('input[name=name]').value = '';
+  });
+})();
+
+// ── Dynamic bottom padding so last meal isn't hidden by sticky summary ──────
+const summaryPanel = document.querySelector('.day-summary-fixed');
+function adjustBodyPadding() {
+  if (!summaryPanel) return;
+  document.body.style.paddingBottom = (summaryPanel.offsetHeight + 32) + 'px';
+}
+adjustBodyPadding();
+window.addEventListener('resize', adjustBodyPadding);
+// Re-measure when any <details> in the page opens/closes (per-slot breakdowns)
+document.querySelectorAll('details').forEach(d => d.addEventListener('toggle', adjustBodyPadding));
+// And after Tom Select / fonts settle in
+window.addEventListener('load', adjustBodyPadding);
+// And when the summary collapse animates open/closed.
+const summaryDetails = document.getElementById('summaryDetails');
+if (summaryDetails) {
+  summaryDetails.addEventListener('shown.bs.collapse', adjustBodyPadding);
+  summaryDetails.addEventListener('hidden.bs.collapse', adjustBodyPadding);
+  // Re-measure mid-animation too so padding tracks smoothly.
+  summaryDetails.addEventListener('show.bs.collapse', () => setTimeout(adjustBodyPadding, 50));
+  summaryDetails.addEventListener('hide.bs.collapse', () => setTimeout(adjustBodyPadding, 50));
+}
+
+// Per-slot collapses: re-measure padding so the bottom panel never overlaps,
+// and nudge the Tom Select inside so it re-paints at the right width when
+// shown for the first time.
+document.querySelectorAll('[id^="slot-"][id$="-body"]').forEach(body => {
+  body.addEventListener('shown.bs.collapse', () => {
+    adjustBodyPadding();
+    const sel = body.querySelector('.item-search');
+    if (sel && sel.tomselect) {
+      sel.tomselect.positionDropdown && sel.tomselect.positionDropdown();
+      sel.tomselect.sync && sel.tomselect.sync();
+    }
+    saveSlotStates();
+  });
+  body.addEventListener('hidden.bs.collapse', () => {
+    adjustBodyPadding();
+    saveSlotStates();
+  });
+});
+
+// ── Slot expand/collapse state persists across reloads ──────────────────────
+// The server smart-expands the first empty slot on a fresh visit; once the
+// user touches anything (toggle, add food, delete, servings change), the
+// current state is saved to localStorage and restored on every subsequent
+// reload. This prevents add/delete from "collapsing the meal" out from under
+// the user.
+const SLOT_STATE_KEY = 'diary-slots-{{ date_str }}';
+
+function readSlotStates() {
+  try { return JSON.parse(localStorage.getItem(SLOT_STATE_KEY) || 'null'); }
+  catch { return null; }
+}
+
+function saveSlotStates() {
+  const state = {};
+  document.querySelectorAll('.slot-toggle').forEach(btn => {
+    state[btn.dataset.slot] = btn.getAttribute('aria-expanded') === 'true';
+  });
+  localStorage.setItem(SLOT_STATE_KEY, JSON.stringify(state));
+}
+
+// Restore on load — runs once, BEFORE any animation. Set classes/aria
+// directly so there's no fade-in flash.
+(function restoreSlotStates() {
+  const saved = readSlotStates();
+  if (!saved) return;  // first visit: keep server's smart-expand default
+  document.querySelectorAll('.slot-toggle').forEach(btn => {
+    const slot = btn.dataset.slot;
+    if (!(slot in saved)) return;
+    const isOpen = !!saved[slot];
+    const body = document.getElementById('slot-' + slot + '-body');
+    if (body) body.classList.toggle('show', isOpen);
+    btn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+  });
+  adjustBodyPadding();
+})();
+
+// After an Add Food reload, the server redirects to #slot-N-addfood. The
+// native anchor jump fails when the slot body is collapsed (display:none),
+// so force-expand that slot and scroll its Add Food form into view.
+(function returnToAddFoodForm() {
+  const m = location.hash.match(/^#slot-(\d+)-addfood$/);
+  if (!m) return;
+  const slot = m[1];
+  const body = document.getElementById('slot-' + slot + '-body');
+  const btn = document.querySelector('.slot-toggle[data-slot="' + slot + '"]');
+  if (body && !body.classList.contains('show')) {
+    body.classList.add('show');
+    if (btn) btn.setAttribute('aria-expanded', 'true');
+    saveSlotStates();
+  }
+  const target = document.getElementById('slot-' + slot + '-addfood');
+  if (target) {
+    // Tiny delay so layout (Tom Select init, collapse states) settles first.
+    setTimeout(() => target.scrollIntoView({ block: 'center' }), 60);
+  }
+})();
+
+// Save state right before any form-driven reload so the post-reload page
+// reads the same state back.
+document.querySelectorAll('.add-food-form').forEach(form => {
+  form.addEventListener('submit', saveSlotStates);
+});
+document.querySelectorAll('form[action^="/diary-entries/"][action$="/delete"]').forEach(form => {
+  form.addEventListener('submit', saveSlotStates);
+});
+
+// Diacritic-insensitive normalization (matches server-side unaccent).
+const _PL_MAP = {'ł':'l','Ł':'L','ą':'a','Ą':'A','ć':'c','Ć':'C','ę':'e','Ę':'E',
+                 'ń':'n','Ń':'N','ó':'o','Ó':'O','ś':'s','Ś':'S','ź':'z','Ź':'Z','ż':'z','Ż':'Z'};
+function unaccent(s) {
+  return (s || '').replace(/[łŁąĄćĆęĘńŃóÓśŚźŹżŻ]/g, c => _PL_MAP[c])
+                  .normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase();
+}
+
+// ── Searchable dropdowns (Tom Select on each Add Food select) ───────────────
+document.querySelectorAll('.add-food-form .item-search').forEach(sel => {
+  const ts = new TomSelect(sel, {
+    create: false,
+    allowEmptyOption: false,
+    maxOptions: 1000,
+    placeholder: 'Search recipes or ingredients…',
+    // Keep the placeholder visible even when an item is selected, so the
+    // search input (revealed on focus via CSS) prompts the user to type.
+    hidePlaceholder: false,
+    searchField: ['text'],
+    sortField: { field: 'text', direction: 'asc' },
+    score: function(search) {
+      const q = unaccent(search);
+      return item => {
+        const t = unaccent(item.text);
+        const i = t.indexOf(q);
+        return i === -1 ? 0 : 2 - i / (t.length || 1);
+      };
+    },
+  });
+
+  // ── Amount ↔ Servings two-way sync ────────────────────────────────────
+  // Amount is a UI helper expressed in the ingredient's own unit (e.g. g).
+  //   servings = amount / serving_size   (and vice-versa)
+  // Only Servings is submitted to the server. Meals have no serving_size,
+  // so for them the two fields stay 1:1 and the unit label is blank.
+  const form = sel.closest('.add-food-form');
+  const amountInput = form.querySelector('.amount-input');
+  const servingsInput = form.querySelector('input[name=servings]');
+  let suppress = false;  // prevents the input → input echo loop
+
+  function selectedMeta() {
+    const val = ts.getValue();
+    if (!val) return { servingSize: null, unit: '' };
+    const opt = sel.querySelector('option[value="' + val + '"]');
+    if (!opt) return { servingSize: null, unit: '' };
+    const ss = parseFloat(opt.dataset.servingSize);
+    return {
+      servingSize: (isFinite(ss) && ss > 0) ? ss : null,
+      unit: opt.dataset.unit || '',
+    };
+  }
+
+  function fmt(v) {
+    // Trim to 4 decimals, drop trailing zeros.
+    return parseFloat(v.toFixed(4)).toString();
+  }
+
+  const amountUnitSuffix = form.querySelector('.amount-unit-suffix');
+
+  ts.on('change', () => {
+    const val = ts.getValue();
+    const { servingSize, unit } = selectedMeta();
+    amountUnitSuffix.textContent = unit || '';
+    amountUnitSuffix.style.display = unit ? '' : 'none';
+    suppress = true;
+    servingsInput.value = 1;
+    amountInput.value   = servingSize ? fmt(servingSize) : 1;
+    suppress = false;
+    // After picking an item, jump straight to Amount with its text selected,
+    // so typing a number replaces it (no manual click/select needed).
+    if (val) {
+      setTimeout(() => { amountInput.focus(); amountInput.select(); }, 0);
+    }
+  });
+
+  amountInput.addEventListener('input', () => {
+    if (suppress) return;
+    const amt = parseFloat(amountInput.value);
+    if (!isFinite(amt)) return;
+    const { servingSize } = selectedMeta();
+    suppress = true;
+    servingsInput.value = fmt(servingSize ? (amt / servingSize) : amt);
+    suppress = false;
+  });
+
+  servingsInput.addEventListener('input', () => {
+    if (suppress) return;
+    const srv = parseFloat(servingsInput.value);
+    if (!isFinite(srv)) return;
+    const { servingSize } = selectedMeta();
+    suppress = true;
+    amountInput.value = fmt(servingSize ? (srv * servingSize) : srv);
+    suppress = false;
+  });
+});
+
+// ── Per-row Amount ↔ Servings sync (mirrors the Add Food row logic) ─────────
+// The Amount input lives in its own <td> (so the table layout stays clean) and
+// is matched to its servings form by entry id. Editing either field updates
+// the other; only `servings` is saved server-side.
+const _rowFmt = v => parseFloat(v.toFixed(4)).toString();
+document.querySelectorAll('.row-amount-group').forEach(group => {
+  const entryId = group.dataset.entryId;
+  const form = document.querySelector('.servings-form[data-entry-id="' + entryId + '"]');
+  if (!form) return;
+  const ss = parseFloat(form.dataset.servingSize);
+  if (!isFinite(ss) || ss <= 0) return;  // meal rows have no serving_size → no sync
+  const amountInput   = group.querySelector('.row-amount-input');
+  const servingsInput = form.querySelector('input[name=servings]');
+  let suppress = false;
+
+  amountInput.addEventListener('input', () => {
+    if (suppress) return;
+    const amt = parseFloat(amountInput.value);
+    if (!isFinite(amt)) return;
+    suppress = true;
+    servingsInput.value = _rowFmt(amt / ss);
+    // Trigger the existing servings auto-save listener (debounced fetch).
+    servingsInput.dispatchEvent(new Event('input', { bubbles: true }));
+    suppress = false;
+  });
+  servingsInput.addEventListener('input', () => {
+    if (suppress) return;
+    const srv = parseFloat(servingsInput.value);
+    if (!isFinite(srv)) return;
+    suppress = true;
+    amountInput.value = _rowFmt(srv * ss);
+    suppress = false;
+  });
+});
+
+// ── Auto-save on servings change ────────────────────────────────────────────
+document.querySelectorAll('.servings-form').forEach(form => {
+  const input = form.querySelector('input[name=servings]');
+  const indicator = form.querySelector('.saving-indicator');
+  const entryId = form.dataset.entryId;
+  const slot = form.dataset.slot;
+  let timer;
+
+  const save = async () => {
+    const val = parseFloat(input.value);
+    if (!val || val <= 0) return;
+    indicator.textContent = 'saving…';
+    indicator.style.color = '#8b949e';
+    try {
+      const fd = new FormData();
+      fd.append('servings', val);
+      fd.append('slot', slot);
+      const res = await fetch('/diary-entries/' + entryId + '/update', {
+        method: 'POST',
+        body: fd,
+      });
+      if (res.ok) {
+        // Preserve which slots are expanded across the reload.
+        if (typeof saveSlotStates === 'function') saveSlotStates();
+        // Reload to refresh totals everywhere
+        window.location.reload();
+      } else {
+        indicator.textContent = 'error';
+        indicator.style.color = '#f85149';
+      }
+    } catch (err) {
+      indicator.textContent = 'error';
+      indicator.style.color = '#f85149';
+    }
+  };
+
+  input.addEventListener('input', () => {
+    clearTimeout(timer);
+    timer = setTimeout(save, 700);
+  });
+  input.addEventListener('blur', () => {
+    clearTimeout(timer);
+    save();
+  });
+});
+</script>
+{% endblock %}

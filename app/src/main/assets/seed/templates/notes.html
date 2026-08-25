@@ -1,0 +1,164 @@
+{% extends 'base.html' %}
+{% block title %}Notes — Hector{% endblock %}
+
+{% block content %}
+<style>
+  .notes-toolbar {
+    background: var(--hx-panel2); border: 1px solid var(--hx-border); border-bottom: 0;
+    border-radius: 10px 10px 0 0; padding: .45rem .6rem;
+    display: flex; flex-wrap: wrap; gap: .25rem; align-items: center;
+    position: sticky; top: 58px; z-index: 5;
+  }
+  .notes-toolbar .btn {
+    --bs-btn-padding-y: .22rem; --bs-btn-padding-x: .5rem;
+    color: #8b949e; border-color: transparent;
+  }
+  .notes-toolbar .btn:hover { color: var(--hx-text); background: var(--hx-border); }
+  .notes-toolbar .divider { width: 1px; height: 22px; background: var(--hx-border); margin: 0 .3rem; }
+  #notes-editor {
+    background: var(--hx-panel); border: 1px solid var(--hx-border); border-radius: 0 0 10px 10px;
+    min-height: 65vh; padding: 1.2rem 1.4rem; outline: none;
+    color: var(--hx-text); line-height: 1.65; font-size: .95rem;
+  }
+  #notes-editor:focus { border-color: #388bfd; box-shadow: 0 0 0 .2rem #388bfd22; }
+  #notes-editor h1, #notes-editor h2, #notes-editor h3 { color: #79c0ff; margin: .8em 0 .4em; }
+  #notes-editor h1 { font-size: 1.5rem; } #notes-editor h2 { font-size: 1.25rem; } #notes-editor h3 { font-size: 1.05rem; }
+  #notes-editor a { color: #58a6ff; }
+  #notes-editor blockquote { border-left: 3px solid var(--hx-border); margin-left: 0; padding-left: 1em; color: #8b949e; }
+  #notes-editor:empty::before { content: 'Write anything… shopping lists, ideas, links.'; color: #484f58; }
+  .notes-status { font-size: .78rem; color: #8b949e; margin-left: auto; }
+</style>
+
+<div class="d-flex align-items-center mb-2">
+  <h4 class="mb-0"><i class="bi bi-sticky me-2"></i>Notes</h4>
+  <small class="text-secondary ms-3">One document, autosaved. Ctrl+Click a link to open it.</small>
+</div>
+
+<div class="notes-toolbar">
+  <button class="btn btn-sm" data-cmd="bold" title="Bold (Ctrl+B)"><i class="bi bi-type-bold"></i></button>
+  <button class="btn btn-sm" data-cmd="italic" title="Italic (Ctrl+I)"><i class="bi bi-type-italic"></i></button>
+  <button class="btn btn-sm" data-cmd="underline" title="Underline (Ctrl+U)"><i class="bi bi-type-underline"></i></button>
+  <button class="btn btn-sm" data-cmd="strikeThrough" title="Strikethrough"><i class="bi bi-type-strikethrough"></i></button>
+  <span class="divider"></span>
+  <button class="btn btn-sm" data-block="h1" title="Heading 1"><i class="bi bi-type-h1"></i></button>
+  <button class="btn btn-sm" data-block="h2" title="Heading 2"><i class="bi bi-type-h2"></i></button>
+  <button class="btn btn-sm" data-block="h3" title="Heading 3"><i class="bi bi-type-h3"></i></button>
+  <button class="btn btn-sm" data-block="p" title="Normal text"><i class="bi bi-paragraph"></i></button>
+  <button class="btn btn-sm" data-block="blockquote" title="Quote"><i class="bi bi-quote"></i></button>
+  <span class="divider"></span>
+  <button class="btn btn-sm" data-cmd="insertUnorderedList" title="Bullet list"><i class="bi bi-list-ul"></i></button>
+  <button class="btn btn-sm" data-cmd="insertOrderedList" title="Numbered list"><i class="bi bi-list-ol"></i></button>
+  <span class="divider"></span>
+  <button class="btn btn-sm" id="btn-link" title="Insert link"><i class="bi bi-link-45deg"></i></button>
+  <button class="btn btn-sm" data-cmd="unlink" title="Remove link"><i class="bi bi-link-45deg" style="text-decoration:line-through"></i></button>
+  <button class="btn btn-sm" data-cmd="removeFormat" title="Clear formatting"><i class="bi bi-eraser"></i></button>
+  <span class="notes-status" id="notes-status"><i class="bi bi-check2"></i> saved</span>
+</div>
+
+<div id="notes-editor" contenteditable="true" spellcheck="true">{{ notes_html | safe }}</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+  const editor = document.getElementById('notes-editor');
+  const status = document.getElementById('notes-status');
+  let timer = null, dirty = false;
+
+  function setStatus(state) {
+    if (state === 'saving') status.innerHTML = '<i class="bi bi-arrow-repeat"></i> saving…';
+    else if (state === 'saved') status.innerHTML = '<i class="bi bi-check2"></i> saved';
+    else if (state === 'error') status.innerHTML = '<i class="bi bi-exclamation-triangle"></i> save failed';
+    else status.innerHTML = '<i class="bi bi-pencil"></i> unsaved';
+  }
+
+  function save() {
+    dirty = false;
+    setStatus('saving');
+    fetch('/notes/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ html: editor.innerHTML }),
+    }).then(r => r.ok ? setStatus('saved') : setStatus('error'))
+      .catch(() => setStatus('error'));
+  }
+
+  editor.addEventListener('input', () => {
+    dirty = true;
+    setStatus('dirty');
+    clearTimeout(timer);
+    timer = setTimeout(save, 800);
+  });
+
+  // Ctrl+S saves immediately
+  document.addEventListener('keydown', e => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+      e.preventDefault();
+      clearTimeout(timer);
+      save();
+    }
+  });
+
+  // Flush on tab close (sendBeacon survives page unload)
+  window.addEventListener('beforeunload', () => {
+    if (dirty) {
+      navigator.sendBeacon('/notes/save',
+        new Blob([JSON.stringify({ html: editor.innerHTML })], { type: 'application/json' }));
+    }
+  });
+
+  // Toolbar commands
+  document.querySelectorAll('.notes-toolbar [data-cmd]').forEach(btn => {
+    btn.addEventListener('mousedown', e => e.preventDefault());  // keep selection
+    btn.addEventListener('click', () => {
+      document.execCommand(btn.dataset.cmd, false, null);
+      editor.dispatchEvent(new Event('input'));
+      editor.focus();
+    });
+  });
+  document.querySelectorAll('.notes-toolbar [data-block]').forEach(btn => {
+    btn.addEventListener('mousedown', e => e.preventDefault());
+    btn.addEventListener('click', () => {
+      document.execCommand('formatBlock', false, btn.dataset.block);
+      editor.dispatchEvent(new Event('input'));
+      editor.focus();
+    });
+  });
+
+  // Insert link: use selected text, or insert the URL itself
+  const btnLink = document.getElementById('btn-link');
+  btnLink.addEventListener('mousedown', e => e.preventDefault());
+  btnLink.addEventListener('click', () => {
+    const url = prompt('Link URL:', 'https://');
+    if (!url || url === 'https://') return;
+    const sel = window.getSelection();
+    if (sel && sel.toString()) {
+      document.execCommand('createLink', false, url);
+    } else {
+      document.execCommand('insertHTML', false,
+        '<a href="' + url.replace(/"/g, '&quot;') + '">' + url.replace(/</g, '&lt;') + '</a>&nbsp;');
+    }
+    editor.dispatchEvent(new Event('input'));
+    editor.focus();
+  });
+
+  // Ctrl+Click opens links (plain click keeps editing)
+  editor.addEventListener('click', e => {
+    const a = e.target.closest('a');
+    if (a && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      window.open(a.href, '_blank');
+    }
+  });
+
+  // Paste: keep it as plain text? No — allow rich paste, but strip scripts.
+  editor.addEventListener('paste', () => {
+    // after the browser inserts pasted content, remove anything executable
+    setTimeout(() => {
+      editor.querySelectorAll('script, style, iframe, object').forEach(el => el.remove());
+      editor.dispatchEvent(new Event('input'));
+    }, 0);
+  });
+})();
+</script>
+{% endblock %}

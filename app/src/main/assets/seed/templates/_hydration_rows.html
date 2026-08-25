@@ -1,0 +1,27 @@
+{# <tr> rows for the hydration table. Used inline and via AJAX. #}
+{% for e in entries %}
+<tr>
+  <td>
+    {% if e.is_today %}<span class="badge bg-primary me-1">Today</span>{% endif %}
+    <span class="{{ 'fw-semibold' if e.is_today else 'text-secondary' }}">{{ e.date }}</span>
+  </td>
+  <td>
+    <form method="post" action="/hydration/{{ e.date }}" class="hydration-form d-flex gap-2 align-items-center">
+      <input type="text" inputmode="numeric" name="ml"
+             class="form-control form-control-sm hydration-input thousands-input"
+             style="max-width:160px"
+             value="{{ '{:,}'.format(e.ml) }}" data-original="{{ e.ml }}">
+      <span class="input-group-text" style="background:var(--hx-bg);border-color:var(--hx-border)">ml</span>
+      <button class="btn btn-primary btn-sm save-btn" type="submit" hidden>
+        <i class="bi bi-check-lg me-1"></i>Save
+      </button>
+    </form>
+  </td>
+  <td class="text-end">
+    {% if e.ml %}
+    <span class="ingredient-chip" style="color:#79c0ff">{{ "{:,}".format(e.ml) }} ml</span>
+    <small class="text-secondary d-block" style="font-size:.7rem">{{ "%.2f"|format(e.ml / 1000) }} L</small>
+    {% else %}<span class="text-secondary">—</span>{% endif %}
+  </td>
+</tr>
+{% endfor %}

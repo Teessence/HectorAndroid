@@ -1,0 +1,105 @@
+{% extends 'base.html' %}
+{% block title %}Hydration — Hector{% endblock %}
+{% block content %}
+
+<style>
+  .hydration-table-scroll { max-height: calc(100vh - 220px); overflow: auto; }
+  .hydration-table-scroll thead th { position: sticky; top: 0; z-index: 2; background: var(--hx-panel); }
+</style>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4 class="fw-bold mb-0"><i class="bi bi-droplet me-2 text-info"></i>Hydration</h4>
+</div>
+
+<div class="card">
+  <div class="hydration-table-scroll" id="hydrationTableScroll">
+    <table class="table table-hover align-middle mb-0">
+      <thead>
+        <tr>
+          <th style="width:30%">Date</th>
+          <th style="width:45%">Volume</th>
+          <th class="text-end" style="width:25%">Total</th>
+        </tr>
+      </thead>
+      <tbody id="hydrationTbody">
+        {% if entries %}
+          {% include '_hydration_rows.html' %}
+        {% else %}
+          <tr><td colspan="3" class="text-center text-secondary py-4">No entries yet.</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const fmtThousands = v => Number(v).toLocaleString('en-US');
+const stripCommas  = s => (s || '').replace(/,/g, '').trim();
+
+function bindHydrationForms(scope) {
+  scope.querySelectorAll('.hydration-form:not([data-bound])').forEach(form => {
+    form.dataset.bound = '1';
+    const input = form.querySelector('.hydration-input');
+    const btn   = form.querySelector('.save-btn');
+    const update = () => {
+      btn.hidden = stripCommas(input.value) === (input.dataset.original || '');
+    };
+    input.addEventListener('focus', () => { input.value = stripCommas(input.value); });
+    input.addEventListener('blur', () => {
+      const v = stripCommas(input.value);
+      if (v === '' || isNaN(parseInt(v, 10))) return;
+      input.value = fmtThousands(parseInt(v, 10));
+    });
+    input.addEventListener('input', update);
+    form.addEventListener('submit', () => { input.value = stripCommas(input.value); });
+    update();
+  });
+}
+
+const hydTbody = document.getElementById('hydrationTbody');
+if (hydTbody) bindHydrationForms(hydTbody);
+
+const hydScroll = document.getElementById('hydrationTableScroll');
+let hydNextPage = 2;
+let hydHasMore  = {{ 'true' if has_more else 'false' }};
+let hydLoading  = false;
+
+async function hydLoadMore() {
+  if (hydLoading || !hydHasMore) return;
+  hydLoading = true;
+  try {
+    const params = new URLSearchParams(window.location.search);
+    params.set('page', hydNextPage);
+    const res = await fetch('/hydration?' + params.toString(), {
+      headers: { 'X-Requested-With': 'fetch', 'Accept': 'application/json' },
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.html) hydTbody.insertAdjacentHTML('beforeend', data.html);
+    bindHydrationForms(hydTbody);
+    hydHasMore = !!data.has_more;
+    hydNextPage += 1;
+  } finally {
+    hydLoading = false;
+  }
+}
+
+if (hydScroll && hydHasMore) {
+  hydScroll.addEventListener('scroll', () => {
+    const nearBottom = hydScroll.scrollTop + hydScroll.clientHeight
+                       >= hydScroll.scrollHeight - 200;
+    if (nearBottom) hydLoadMore();
+  });
+  const fill = () => {
+    if (!hydHasMore || hydLoading) return;
+    if (hydScroll.scrollHeight <= hydScroll.clientHeight + 4) {
+      hydLoadMore().then(fill);
+    }
+  };
+  fill();
+}
+</script>
+{% endblock %}

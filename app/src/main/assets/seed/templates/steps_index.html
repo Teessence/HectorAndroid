@@ -1,0 +1,137 @@
+{% extends 'base.html' %}
+{% block title %}Steps — Hector{% endblock %}
+{% block content %}
+
+<style>
+  .steps-table-scroll { max-height: calc(100vh - 220px); overflow: auto; }
+  .steps-table-scroll thead th { position: sticky; top: 0; z-index: 2; background: var(--hx-panel); }
+</style>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4 class="fw-bold mb-0"><i class="bi bi-person-walking me-2"></i>Steps</h4>
+  {% if garmin_status and garmin_status.enabled and garmin_status.available %}
+    <div class="text-secondary" style="font-size:.78rem">
+      <i class="bi bi-watch me-1"></i>Garmin auto-fetch
+      {% if garmin_status.last_run %}
+        — last sync {{ garmin_status.last_run|relative_time }}
+      {% endif %}
+      {% if garmin_status.last_error %}
+        <span class="text-danger ms-1" title="{{ garmin_status.last_error }}">⚠ error</span>
+      {% endif %}
+    </div>
+  {% endif %}
+</div>
+
+<div class="card">
+  <div class="steps-table-scroll" id="stepsTableScroll">
+    <table class="table table-hover align-middle mb-0">
+      <thead>
+        <tr>
+          <th style="width:25%">Date</th>
+          <th style="width:35%">Steps</th>
+          <th style="width:15%">Fetched</th>
+          <th class="text-end" style="width:25%">Caloric Burn</th>
+        </tr>
+      </thead>
+      <tbody id="stepsTbody">
+        {% if entries %}
+          {% include '_steps_rows.html' %}
+        {% else %}
+          <tr><td colspan="4" class="text-center text-secondary py-4">No entries yet.</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="text-secondary mt-2" style="font-size:.8rem">
+  Caloric Burn uses your most recent weight (from <a href="/steps">step logs</a>) and the step-rate table in
+  <a href="/settings">Settings</a>.
+  Locked rows were auto-fetched after noon the next day — click the pencil to unlock and override.
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const fmtThousands = v => Number(v).toLocaleString('en-US');
+const stripCommas  = s => (s || '').replace(/,/g, '').trim();
+
+// Bind the steps-form interactions on a scope of rows. Safe to call multiple
+// times — only un-bound forms get listeners attached.
+function bindStepsForms(scope) {
+  scope.querySelectorAll('.steps-form:not([data-bound])').forEach(form => {
+    form.dataset.bound = '1';
+    const input    = form.querySelector('.steps-input');
+    const btn      = form.querySelector('.save-btn');
+    const unlock   = form.querySelector('.unlock-btn');
+    const lockedV  = form.querySelector('.locked-value');
+    const update = () => {
+      btn.hidden = stripCommas(input.value) === (input.dataset.original || '');
+    };
+    if (unlock) {
+      unlock.addEventListener('click', () => {
+        if (lockedV) lockedV.hidden = true;
+        input.hidden = false;
+        unlock.hidden = true;
+        input.focus();
+        input.select();
+      });
+    }
+    input.addEventListener('focus', () => { input.value = stripCommas(input.value); });
+    input.addEventListener('blur', () => {
+      const v = stripCommas(input.value);
+      if (v === '' || isNaN(parseInt(v, 10))) return;
+      input.value = fmtThousands(parseInt(v, 10));
+    });
+    input.addEventListener('input', update);
+    form.addEventListener('submit', () => { input.value = stripCommas(input.value); });
+    update();
+  });
+}
+
+const stepsTbody = document.getElementById('stepsTbody');
+if (stepsTbody) bindStepsForms(stepsTbody);
+
+// ── Infinite scroll ─────────────────────────────────────────────────────────
+const stepsScroll = document.getElementById('stepsTableScroll');
+let stepsNextPage = 2;
+let stepsHasMore  = {{ 'true' if has_more else 'false' }};
+let stepsLoading  = false;
+
+async function stepsLoadMore() {
+  if (stepsLoading || !stepsHasMore) return;
+  stepsLoading = true;
+  try {
+    const params = new URLSearchParams(window.location.search);
+    params.set('page', stepsNextPage);
+    const res = await fetch('/steps?' + params.toString(), {
+      headers: { 'X-Requested-With': 'fetch', 'Accept': 'application/json' },
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.html) stepsTbody.insertAdjacentHTML('beforeend', data.html);
+    bindStepsForms(stepsTbody);
+    stepsHasMore = !!data.has_more;
+    stepsNextPage += 1;
+  } finally {
+    stepsLoading = false;
+  }
+}
+
+if (stepsScroll && stepsHasMore) {
+  stepsScroll.addEventListener('scroll', () => {
+    const nearBottom = stepsScroll.scrollTop + stepsScroll.clientHeight
+                       >= stepsScroll.scrollHeight - 200;
+    if (nearBottom) stepsLoadMore();
+  });
+  const fill = () => {
+    if (!stepsHasMore || stepsLoading) return;
+    if (stepsScroll.scrollHeight <= stepsScroll.clientHeight + 4) {
+      stepsLoadMore().then(fill);
+    }
+  };
+  fill();
+}
+</script>
+{% endblock %}

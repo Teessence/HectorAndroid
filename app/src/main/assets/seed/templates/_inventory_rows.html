@@ -1,0 +1,34 @@
+{# Stock-tab <tr> rows. Used inline and via AJAX. Caller provides `ings`. #}
+{% for i in ings %}
+<tr>
+  <td class="fw-semibold" style="min-width:180px">
+    <div class="d-flex align-items-center gap-2">
+      {% if i.image_filename %}
+      <img src="/static/ingredient_images/{{ i.image_filename }}"
+           style="width:72px;height:72px;object-fit:contain;border-radius:8px;border:1px solid var(--hx-border);background:var(--hx-bg);padding:3px;flex-shrink:0">
+      {% else %}
+      <div style="width:72px;height:72px;border-radius:8px;border:1px solid var(--hx-border);background:var(--hx-panel2);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+        <i class="bi bi-basket text-secondary" style="font-size:1.5rem"></i>
+      </div>
+      {% endif %}
+      <span title="{{ i.name }}">{{ i.name }}</span>
+    </div>
+  </td>
+  <td class="text-secondary" style="font-size:.78rem">
+    {% set tags = [] %}
+    {% if i.company %}{% set _ = tags.append(i.company) %}{% endif %}
+    {% if i.shop %}{% set _ = tags.append(i.shop) %}{% endif %}
+    {{ tags | join(' · ') if tags else '—' }}
+  </td>
+  <td class="text-end">
+    <div class="input-group input-group-sm" style="max-width:180px;margin-left:auto">
+      <input type="number" name="inv_{{ i.id }}" step="any" min="0"
+             form="inv-form"
+             class="form-control text-end"
+             value="{{ '%g'|format(i.inventory_amount) if i.inventory_amount else '' }}"
+             placeholder="0">
+      <span class="input-group-text">{{ i.unit }}</span>
+    </div>
+  </td>
+</tr>
+{% endfor %}

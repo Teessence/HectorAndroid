@@ -1,0 +1,206 @@
+{% extends 'base.html' %}
+{% block title %}Inventory — Hector{% endblock %}
+{% block content %}
+
+<style>
+  .inv-table-scroll { max-height: calc(100vh - 320px); overflow: auto; }
+  .inv-table-scroll thead th { position: sticky; top: 0; z-index: 2; background: var(--hx-panel); }
+</style>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4 class="fw-bold mb-0"><i class="bi bi-box-seam me-2"></i>Inventory</h4>
+</div>
+
+<ul class="nav nav-tabs mb-3" role="tablist" style="font-size:.9rem">
+  <li class="nav-item">
+    <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#inv-stock" type="button">
+      <i class="bi bi-basket me-1"></i>Stock
+    </button>
+  </li>
+  <li class="nav-item">
+    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#inv-possible" type="button">
+      <i class="bi bi-check-circle me-1 text-success"></i>Cook Now ({{ recipes_full|length }})
+    </button>
+  </li>
+  <li class="nav-item">
+    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#inv-partial" type="button">
+      <i class="bi bi-cart me-1 text-warning"></i>Almost There ({{ recipes_partial|length }})
+    </button>
+  </li>
+</ul>
+
+<div class="tab-content">
+
+{# ─────────────────────────── STOCK (editable list) ──────────────────── #}
+<div class="tab-pane fade show active" id="inv-stock" role="tabpanel">
+  <form method="get" class="d-flex gap-2 mb-3">
+    <input type="search" name="q" class="form-control form-control-sm"
+           style="max-width:280px" placeholder="Search by name, shop, or brand…"
+           value="{{ q }}">
+    <button class="btn btn-outline-secondary btn-sm" type="submit"><i class="bi bi-search"></i></button>
+    {% if q %}<a href="/inventory" class="btn btn-outline-danger btn-sm"><i class="bi bi-x"></i></a>{% endif %}
+  </form>
+
+  {# Empty form whose ID owns every paginated input via form="inv-form". This
+     way the AJAX-appended <input>s submit together with the initial batch. #}
+  <form method="post" id="inv-form"></form>
+
+  <div class="card">
+    <div class="inv-table-scroll" id="invTableScroll">
+      <table class="table table-hover align-middle mb-0">
+        <thead>
+          <tr>
+            <th>Ingredient</th>
+            <th class="text-secondary" style="font-size:.78rem">Brand · Shop</th>
+            <th class="text-end" style="width:200px">On Hand</th>
+          </tr>
+        </thead>
+        <tbody id="invTbody">
+          {% if ings %}
+            {% include '_inventory_rows.html' %}
+          {% else %}
+            <tr><td colspan="3" class="text-center text-secondary py-4">No ingredients yet.</td></tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="d-flex justify-content-end mt-3">
+    <button type="submit" form="inv-form" class="btn btn-primary px-4">
+      <i class="bi bi-check-lg me-1"></i>Save Inventory
+    </button>
+  </div>
+</div>
+
+{# ─────────────────── COOK NOW (recipes you have everything for) ───────── #}
+<div class="tab-pane fade" id="inv-possible" role="tabpanel">
+  {% if recipes_full %}
+  <p class="text-secondary mb-3" style="font-size:.85rem">
+    Recipes you have <strong class="text-success">every ingredient</strong> for, in the required amount.
+  </p>
+  <div class="row g-3">
+    {% for r in recipes_full %}
+    <div class="col-md-6 col-lg-4">
+      <div class="card h-100 border-success" style="border-width:1px!important">
+        <div class="card-body p-3 d-flex gap-3 align-items-start">
+          {% if r.image_filename %}
+          <img src="/static/ingredient_images/{{ r.image_filename }}"
+               style="width:72px;height:72px;object-fit:contain;border-radius:8px;border:1px solid var(--hx-border);background:var(--hx-bg);padding:3px;flex-shrink:0">
+          {% else %}
+          <div style="width:72px;height:72px;border-radius:8px;border:1px solid var(--hx-border);background:var(--hx-panel2);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+            <i class="bi bi-journal-text text-secondary" style="font-size:1.5rem"></i>
+          </div>
+          {% endif %}
+          <div class="flex-grow-1">
+            <a href="/meals/{{ r.id }}/edit" class="fw-semibold text-body-emphasis text-decoration-none">{{ r.name }}</a>
+            <div class="text-success mt-1" style="font-size:.78rem">
+              <i class="bi bi-check-lg me-1"></i>{{ r.total_ingredients }} ingredient{{ '' if r.total_ingredients == 1 else 's' }} on hand
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="text-secondary">No recipes fully match your current stock. Try the <em>Almost There</em> tab for partials.</p>
+  {% endif %}
+</div>
+
+{# ─────────────────── ALMOST THERE (partial matches) ───────────────────── #}
+<div class="tab-pane fade" id="inv-partial" role="tabpanel">
+  {% if recipes_partial %}
+  <p class="text-secondary mb-3" style="font-size:.85rem">
+    Recipes where you have most of what you need. Each card lists what's missing.
+  </p>
+  <div class="row g-3">
+    {% for r in recipes_partial %}
+    <div class="col-md-6 col-lg-4">
+      <div class="card h-100">
+        <div class="card-body p-3">
+          <div class="d-flex gap-3 align-items-start mb-2">
+            {% if r.image_filename %}
+            <img src="/static/ingredient_images/{{ r.image_filename }}"
+                 style="width:48px;height:48px;object-fit:contain;border-radius:6px;border:1px solid var(--hx-border);background:var(--hx-bg);padding:2px;flex-shrink:0">
+            {% else %}
+            <div style="width:48px;height:48px;border-radius:6px;border:1px solid var(--hx-border);background:var(--hx-panel2);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+              <i class="bi bi-journal-text text-secondary"></i>
+            </div>
+            {% endif %}
+            <div class="flex-grow-1">
+              <a href="/meals/{{ r.id }}/edit" class="fw-semibold text-body-emphasis text-decoration-none">{{ r.name }}</a>
+              <div class="text-secondary" style="font-size:.78rem">
+                {{ r.have_count }} / {{ r.total_ingredients }} on hand
+              </div>
+            </div>
+          </div>
+          <div class="text-warning mb-1" style="font-size:.75rem;text-transform:uppercase;letter-spacing:.06em">
+            <i class="bi bi-cart me-1"></i>Need to buy ({{ r.missing | length }})
+          </div>
+          <ul class="list-unstyled mb-0" style="font-size:.82rem">
+            {% for m in r.missing %}
+            <li class="d-flex justify-content-between py-1 border-bottom border-secondary">
+              <span>{{ m.name }}</span>
+              <span class="text-warning">{{ "%g"|format(m.short_by) }} {{ m.unit }}</span>
+            </li>
+            {% endfor %}
+          </ul>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="text-secondary">No partial matches either. Add some recipes and stock to get suggestions.</p>
+  {% endif %}
+</div>
+
+</div>{# /tab-content #}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Stock tab infinite scroll. Newly fetched rows have form="inv-form" so they
+// submit together with the original batch when the user clicks Save.
+const invScroll = document.getElementById('invTableScroll');
+const invTbody  = document.getElementById('invTbody');
+let invNextPage = 2;
+let invHasMore  = {{ 'true' if has_more else 'false' }};
+let invLoading  = false;
+
+async function invLoadMore() {
+  if (invLoading || !invHasMore) return;
+  invLoading = true;
+  try {
+    const params = new URLSearchParams(window.location.search);
+    params.set('page', invNextPage);
+    const res = await fetch('/inventory?' + params.toString(), {
+      headers: { 'X-Requested-With': 'fetch', 'Accept': 'application/json' },
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.html) invTbody.insertAdjacentHTML('beforeend', data.html);
+    invHasMore = !!data.has_more;
+    invNextPage += 1;
+  } finally {
+    invLoading = false;
+  }
+}
+
+if (invScroll && invHasMore) {
+  invScroll.addEventListener('scroll', () => {
+    const nearBottom = invScroll.scrollTop + invScroll.clientHeight
+                       >= invScroll.scrollHeight - 200;
+    if (nearBottom) invLoadMore();
+  });
+  const fill = () => {
+    if (!invHasMore || invLoading) return;
+    if (invScroll.scrollHeight <= invScroll.clientHeight + 4) {
+      invLoadMore().then(fill);
+    }
+  };
+  fill();
+}
+</script>
+{% endblock %}

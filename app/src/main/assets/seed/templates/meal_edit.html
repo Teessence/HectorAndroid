@@ -1,0 +1,458 @@
+{% extends 'base.html' %}
+{% block title %}{{ meal.name }} — Hector{% endblock %}
+{% block content %}
+
+<link href="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/css/tom-select.bootstrap5.min.css" rel="stylesheet">
+<style>
+  .ts-wrapper { min-width: 320px; }
+  .ts-control { background: var(--hx-bg) !important; border-color: var(--hx-border) !important; color: var(--hx-text) !important; min-height: calc(1.5em + .5rem + 2px) !important; }
+  .ts-control input, .ts-control .item { color: var(--hx-text) !important; }
+  .ts-dropdown { background: var(--hx-panel) !important; border-color: var(--hx-border) !important; color: var(--hx-text) !important; }
+  .ts-dropdown .option, .ts-dropdown .optgroup-header { color: var(--hx-text) !important; }
+  .ts-dropdown .active { background: #1f6feb !important; color: #fff !important; }
+
+  .nutrient-grid { font-size:.78rem; }
+  .nutrient-grid .col-6 > div:first-child { color:#8b949e; }
+</style>
+
+<div class="row justify-content-center">
+  <div class="col-lg-11">
+
+    {# Header: name + photo + recipe meta editor #}
+    <div class="d-flex align-items-center gap-2 mb-3">
+      <a href="/meals" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i></a>
+      <h4 class="fw-bold mb-0"><i class="bi bi-journal-text me-2"></i>{{ meal.name }}</h4>
+      <form method="post" action="/meals/{{ meal.id }}/delete" class="ms-auto"
+            onsubmit="return confirm('Delete recipe {{ meal.name }}?')">
+        <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash me-1"></i>Delete Recipe</button>
+      </form>
+    </div>
+
+    <div class="card mb-3">
+      <div class="card-body p-3">
+        <form method="post" enctype="multipart/form-data" class="row g-3 align-items-end">
+          <div class="col-md-3">
+            {% if meal.image_filename %}
+            <a href="/static/ingredient_images/{{ meal.image_filename }}" target="_blank" title="Open full size">
+              <img id="imgPreview" src="/static/ingredient_images/{{ meal.image_filename }}"
+                   style="width:120px;height:120px;object-fit:contain;border-radius:10px;border:1px solid var(--hx-border);background:var(--hx-bg);padding:4px;cursor:zoom-in">
+            </a>
+            {% else %}
+            <div id="imgPreviewEmpty" style="width:120px;height:120px;border-radius:10px;border:1px solid var(--hx-border);background:var(--hx-panel2);display:flex;align-items:center;justify-content:center">
+              <i class="bi bi-image text-secondary" style="font-size:1.5rem"></i>
+            </div>
+            <img id="imgPreview" style="display:none;width:120px;height:120px;object-fit:contain;border-radius:10px;border:1px solid var(--hx-border);background:var(--hx-bg);padding:4px">
+            {% endif %}
+          </div>
+          <div class="col-md-3">
+            <label class="form-label fw-semibold">Recipe name</label>
+            <input type="text" name="name" class="form-control" value="{{ meal.name }}" required>
+          </div>
+          <div class="col-md-2">
+            <label class="form-label fw-semibold">Servings</label>
+            <input type="number" name="yields" class="form-control"
+                   step="any" min="0.1" value="{{ '%g'|format(meal.yields) }}"
+                   title="How many portions the recipe makes">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label fw-semibold">{{ 'Replace' if meal.image_filename else 'Upload' }} photo</label>
+            <input type="file" name="image" class="form-control" accept="image/*" id="imageInput">
+            {% if meal.image_filename %}
+            <div class="form-check mt-1">
+              <input class="form-check-input" type="checkbox" name="remove_image" value="1" id="removeImg">
+              <label class="form-check-label text-secondary" for="removeImg">Remove photo</label>
+            </div>
+            {% endif %}
+          </div>
+          <div class="col-12">
+            <label class="form-label fw-semibold">Preparation Steps</label>
+            <textarea name="instructions" class="form-control" rows="8"
+                      placeholder="1. Heat the pan…&#10;2. Add the oats…&#10;3. Stir for 5 minutes…">{{ meal.instructions or '' }}</textarea>
+            <div class="form-text">Free-form notes — line breaks are preserved.</div>
+          </div>
+          <div class="col-12">
+            <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-check-lg me-1"></i>Save</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    {# Ingredients table #}
+    <div class="card mb-3">
+      <div class="meal-header d-flex justify-content-between align-items-center">
+        <span class="fw-bold">Ingredients</span>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+          <thead>
+            <tr>
+              <th>Ingredient</th>
+              <th class="text-end">Servings</th>
+              <th class="text-end">Amount</th>
+              <th class="text-end" style="color:#56d364">Protein</th>
+              <th class="text-end" style="color:#e3b341">Carbs</th>
+              <th class="text-end" style="color:#ffa657">Fat</th>
+              <th class="text-end" style="color:#79c0ff">Kcal</th>
+              <th class="text-end" style="color:#bc8cff">Cost</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in ingredients %}
+            <tr>
+              <td>
+                <div class="d-flex align-items-center gap-2">
+                  {% if r.image_filename %}
+                  <img src="/static/ingredient_images/{{ r.image_filename }}"
+                       style="width:72px;height:72px;object-fit:contain;border-radius:8px;border:1px solid var(--hx-border);background:var(--hx-bg);padding:3px;flex-shrink:0">
+                  {% else %}
+                  <div style="width:72px;height:72px;border-radius:8px;border:1px solid var(--hx-border);background:var(--hx-panel2);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                    <i class="bi bi-basket text-secondary" style="font-size:1.5rem"></i>
+                  </div>
+                  {% endif %}
+                  <div style="min-width:0">
+                    <div>
+                      <span class="fw-semibold">{{ r.name }}</span>
+                      <span class="text-secondary" style="font-size:.78rem">
+                        &nbsp;{{ "%g"|format(r.servings) }} × {{ "%g"|format(r.serving_size) }}{{ r.unit }}
+                        ({{ "%g"|format(r.amount) }}{{ r.unit }})
+                      </span>
+                    </div>
+                    {% if r.company or r.shop %}
+                    <div class="text-secondary" style="font-size:.72rem;margin-top:2px">
+                      {% if r.company %}<i class="bi bi-tag me-1"></i>{{ r.company }}{% endif %}
+                      {% if r.company and r.shop %} · {% endif %}
+                      {% if r.shop %}<i class="bi bi-shop me-1"></i>{{ r.shop }}{% endif %}
+                    </div>
+                    {% endif %}
+                  </div>
+                </div>
+              </td>
+              <td class="text-end">
+                <form class="mi-servings-form d-inline-flex align-items-center gap-1"
+                      data-mi-id="{{ r.mi_id }}" data-serving-size="{{ r.serving_size }}"
+                      data-unit="{{ r.unit }}">
+                  <input type="number" name="servings" value="{{ '%g'|format(r.servings) }}"
+                         step="any" min="0.01"
+                         class="form-control form-control-sm text-end mi-servings-input"
+                         style="width:90px">
+                  <span class="mi-saving-indicator text-secondary" style="font-size:.7rem"></span>
+                </form>
+              </td>
+              <td class="text-end text-secondary mi-amount-cell">{{ "%g"|format(r.amount) }} {{ r.unit }}</td>
+              <td class="text-end">{{ "%.1f"|format(r.protein) }}g</td>
+              <td class="text-end">{{ "%.1f"|format(r.carbs) }}g</td>
+              <td class="text-end">{{ "%.1f"|format(r.fat) }}g</td>
+              <td class="text-end">{{ "%.0f"|format(r.calories) }}</td>
+              <td class="text-end">€{{ "%.2f"|format(r.cost) }}</td>
+              <td class="text-end">
+                <form method="post" action="/meal-ingredients/{{ r.mi_id }}/delete">
+                  <button class="btn btn-sm btn-link text-danger p-0">
+                    <i class="bi bi-x-circle"></i>
+                  </button>
+                </form>
+              </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="9" class="text-center text-secondary py-3" style="font-size:.85rem">No ingredients yet.</td></tr>
+            {% endfor %}
+          </tbody>
+          {% if ingredients %}
+          <tfoot>
+            <tr style="background:var(--hx-panel2);font-weight:600">
+              <td colspan="3">Recipe Total</td>
+              <td class="text-end" style="color:#56d364">{{ "%.1f"|format(totals.protein) }}g</td>
+              <td class="text-end" style="color:#e3b341">{{ "%.1f"|format(totals.carbs) }}g</td>
+              <td class="text-end" style="color:#ffa657">{{ "%.1f"|format(totals.fat) }}g</td>
+              <td class="text-end" style="color:#79c0ff">{{ "%.0f"|format(totals.calories) }}</td>
+              <td class="text-end" style="color:#bc8cff">€{{ "%.2f"|format(totals.cost) }}</td>
+              <td></td>
+            </tr>
+          </tfoot>
+          {% endif %}
+        </table>
+      </div>
+
+      {# Add ingredient — searchable dropdown #}
+      <div class="p-3 border-top border-secondary">
+        <form method="post" action="/meals/{{ meal.id }}/add-ingredient" class="add-ing-form d-flex flex-wrap gap-2 align-items-end">
+          <div>
+            <label class="form-label form-label-sm mb-1">Ingredient</label>
+            <select name="ingredient_id" class="form-select form-select-sm ingredient-search" required>
+              <option value="">— select —</option>
+              {% for i in all_ings %}
+              {% set tags = [] %}
+              {% if i.company %}{% set _ = tags.append(i.company) %}{% endif %}
+              {% if i.shop %}{% set _ = tags.append(i.shop) %}{% endif %}
+              <option value="{{ i.id }}"
+                      data-serving-size="{{ i.serving_size }}"
+                      data-unit="{{ i.unit }}">{{ i.name }}{% if tags %} — {{ tags | join(' · ') }}{% endif %} ({{ i.serving_size }}{{ i.unit }}/serving)</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="amount-wrap">
+            <label class="form-label form-label-sm mb-1">Amount</label>
+            <div class="input-group input-group-sm" style="width:140px">
+              <input type="number" class="form-control form-control-sm amount-input"
+                     step="any" min="0" value="" placeholder="—">
+              <span class="input-group-text amount-unit-suffix" style="display:none"></span>
+            </div>
+          </div>
+          <div>
+            <label class="form-label form-label-sm mb-1">Servings</label>
+            <input type="number" name="servings" class="form-control form-control-sm servings-input"
+                   style="width:110px" step="any" min="0.01" placeholder="1" required>
+          </div>
+          <button class="btn btn-primary btn-sm"><i class="bi bi-plus-lg me-1"></i>Add</button>
+        </form>
+        <small class="text-secondary d-block mt-2" style="font-size:.72rem">
+          Type an <strong>Amount</strong> in the ingredient's own unit (e.g. grams) and Servings fills in
+          automatically — or set Servings directly. E.g. <code>150</code> g of a 100 g-serving ingredient = 1.5 servings.
+        </small>
+      </div>
+    </div>
+
+    {# ── Full nutrition + vitamins + minerals for the recipe ─────────────── #}
+    {% if ingredients %}
+    {% set MACROS = [
+      ('calories','Calories','kcal','#79c0ff','%.0f'),
+      ('protein', 'Protein', 'g',   '#56d364','%.1f'),
+      ('carbs',   'Carbohydrates','g', '#e3b341','%.1f'),
+      ('fat',     'Fat',     'g',   '#ffa657','%.1f'),
+      ('saturates','Saturates','g', '#ff7b72','%.1f'),
+      ('fiber',   'Fiber',   'g',   '#8b949e','%.1f'),
+      ('sugar',   'Sugar',   'g',   '#8b949e','%.1f'),
+      ('salt',    'Salt',    'g',   '#8b949e','%.2f'),
+    ] %}
+    {% set VITS = [
+      ('vit_a','Vitamin A','μg'),('vit_c','Vitamin C','mg'),('vit_d','Vitamin D','μg'),
+      ('vit_e','Vitamin E','mg'),('vit_k','Vitamin K','μg'),
+      ('vit_b1','B1','mg'),('vit_b2','B2','mg'),('vit_b3','B3','mg'),
+      ('vit_b6','B6','mg'),('vit_b9','B9','μg'),('vit_b12','B12','μg'),
+    ] %}
+    {% set MINS = [
+      ('calcium','Calcium','mg'),('iron','Iron','mg'),('magnesium','Magnesium','mg'),
+      ('phosphorus','Phosphorus','mg'),('potassium','Potassium','mg'),('zinc','Zinc','mg'),
+      ('selenium','Selenium','μg'),('iodine','Iodine','μg'),('copper','Copper','mg'),
+      ('manganese','Manganese','mg'),
+    ] %}
+
+    <div class="card mb-3">
+      <div class="card-body p-3">
+        <h6 class="fw-bold mb-3"><i class="bi bi-clipboard-data me-2"></i>Full Recipe Breakdown</h6>
+
+        <div class="nutri-section nutri-nutrition mb-3">
+          <div class="text-secondary mb-2" style="font-size:.72rem;text-transform:uppercase;letter-spacing:.08em">
+            <i class="bi bi-pie-chart me-1"></i>Nutrition
+          </div>
+          <div class="row g-2 nutrient-grid">
+            {% for col, label, unit, color, fmt in MACROS %}
+            <div class="col-6 col-md-3">
+              <div>{{ label }} ({{ unit }})</div>
+              <div style="color:{{ color }};font-weight:600">{{ fmt|format(totals[col]) }}{% if targets[col] %} <span class="text-secondary" style="font-size:.72rem">/ {{ "%.0f"|format(targets[col]) }} ({{ "%.0f"|format(totals[col] / targets[col] * 100) }}%)</span>{% endif %}</div>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+
+        <div class="row g-2">
+          <div class="col-md-6">
+            <div class="nutri-section nutri-vitamins h-100">
+              <div class="text-secondary mb-2" style="font-size:.72rem;text-transform:uppercase;letter-spacing:.08em">
+                <i class="bi bi-capsule me-1"></i>Vitamins
+              </div>
+              <div class="row g-2 nutrient-grid">
+                {% for col, label, unit in VITS %}
+                <div class="col-6 col-md-4">
+                  <div>{{ label }} ({{ unit }})</div>
+                  <div style="color:#bc8cff;font-weight:600">{{ "%.2f"|format(totals[col]) }}{% if targets[col] %} <span class="text-secondary" style="font-size:.72rem">/ {{ "%.0f"|format(targets[col]) }} ({{ "%.0f"|format(totals[col] / targets[col] * 100) }}%)</span>{% endif %}</div>
+                </div>
+                {% endfor %}
+              </div>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="nutri-section nutri-minerals h-100">
+              <div class="text-secondary mb-2" style="font-size:.72rem;text-transform:uppercase;letter-spacing:.08em">
+                <i class="bi bi-moisture me-1"></i>Minerals
+              </div>
+              <div class="row g-2 nutrient-grid">
+                {% for col, label, unit in MINS %}
+                <div class="col-6 col-md-4">
+                  <div>{{ label }} ({{ unit }})</div>
+                  <div style="color:#ffa657;font-weight:600">{{ "%.2f"|format(totals[col]) }}{% if targets[col] %} <span class="text-secondary" style="font-size:.72rem">/ {{ "%.0f"|format(targets[col]) }} ({{ "%.0f"|format(totals[col] / targets[col] * 100) }}%)</span>{% endif %}</div>
+                </div>
+                {% endfor %}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/js/tom-select.complete.min.js"></script>
+<script>
+// Diacritic-insensitive normalization (matches server-side unaccent).
+// Handles Polish letters (ł, ś, ż…) that NFKD does not decompose.
+const _PL_MAP = {'ł':'l','Ł':'L','ą':'a','Ą':'A','ć':'c','Ć':'C','ę':'e','Ę':'E',
+                 'ń':'n','Ń':'N','ó':'o','Ó':'O','ś':'s','Ś':'S','ź':'z','Ź':'Z','ż':'z','Ż':'Z'};
+function unaccent(s) {
+  return (s || '').replace(/[łŁąĄćĆęĘńŃóÓśŚźŹżŻ]/g, c => _PL_MAP[c])
+                  .normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase();
+}
+
+// Tom Select searchable picker
+document.querySelectorAll('.ingredient-search').forEach(sel => {
+  const ts = new TomSelect(sel, {
+    create: false,
+    allowEmptyOption: false,
+    maxOptions: 1000,
+    placeholder: 'Search ingredients…',
+    searchField: ['text'],
+    sortField: { field: 'text', direction: 'asc' },
+    score: function(search) {
+      const q = unaccent(search);
+      return item => {
+        const t = unaccent(item.text);
+        const i = t.indexOf(q);
+        return i === -1 ? 0 : 2 - i / (t.length || 1);
+      };
+    },
+  });
+
+  // ── Amount ↔ Servings sync (mirrors the Diary Add Food form) ──────────
+  // Amount is a UI helper in the ingredient's own unit (g/ml). Only Servings
+  // is submitted:  servings = amount / serving_size  (and vice-versa).
+  const form = sel.closest('.add-ing-form');
+  if (!form) return;
+  const amountInput   = form.querySelector('.amount-input');
+  const servingsInput = form.querySelector('.servings-input');
+  const amountSuffix  = form.querySelector('.amount-unit-suffix');
+  let suppress = false;
+
+  function selectedMeta() {
+    const val = ts.getValue();
+    if (!val) return { servingSize: null, unit: '' };
+    const opt = sel.querySelector('option[value="' + val + '"]');
+    if (!opt) return { servingSize: null, unit: '' };
+    const ss = parseFloat(opt.dataset.servingSize);
+    return { servingSize: (isFinite(ss) && ss > 0) ? ss : null, unit: opt.dataset.unit || '' };
+  }
+  const fmt = v => parseFloat(v.toFixed(4)).toString();
+
+  ts.on('change', () => {
+    const val = ts.getValue();
+    const { servingSize, unit } = selectedMeta();
+    amountSuffix.textContent = unit || '';
+    amountSuffix.style.display = unit ? '' : 'none';
+    suppress = true;
+    servingsInput.value = 1;
+    amountInput.value   = servingSize ? fmt(servingSize) : 1;
+    suppress = false;
+    // Jump to Amount with its text selected so typing a number replaces it.
+    if (val) setTimeout(() => { amountInput.focus(); amountInput.select(); }, 0);
+  });
+
+  amountInput.addEventListener('input', () => {
+    if (suppress) return;
+    const amt = parseFloat(amountInput.value);
+    if (!isFinite(amt)) return;
+    const { servingSize } = selectedMeta();
+    suppress = true;
+    servingsInput.value = fmt(servingSize ? (amt / servingSize) : amt);
+    suppress = false;
+  });
+
+  servingsInput.addEventListener('input', () => {
+    if (suppress) return;
+    const srv = parseFloat(servingsInput.value);
+    if (!isFinite(srv)) return;
+    const { servingSize } = selectedMeta();
+    suppress = true;
+    amountInput.value = fmt(servingSize ? (srv * servingSize) : srv);
+    suppress = false;
+  });
+});
+
+// Auto-save servings on a recipe ingredient row (debounced, like the diary)
+document.querySelectorAll('.mi-servings-form').forEach(form => {
+  const input = form.querySelector('.mi-servings-input');
+  const indicator = form.querySelector('.mi-saving-indicator');
+  const miId = form.dataset.miId;
+  const servingSize = parseFloat(form.dataset.servingSize) || 0;
+  const unit = form.dataset.unit || '';
+  // Live "Amount" cell next to the form — update it as the user types
+  const amountCell = form.closest('tr').querySelector('.mi-amount-cell');
+  let timer;
+
+  const fmtAmount = v => {
+    // mimic Jinja's "%g" formatting (trim trailing zeros)
+    return Number.parseFloat(v.toFixed(6)).toString() + ' ' + unit;
+  };
+
+  const save = async () => {
+    const val = parseFloat(input.value);
+    if (!val || val <= 0) return;
+    indicator.textContent = 'saving…';
+    indicator.style.color = '#8b949e';
+    try {
+      const fd = new FormData();
+      fd.append('servings', val);
+      const res = await fetch('/meal-ingredients/' + miId + '/update', {
+        method: 'POST', body: fd,
+        headers: { 'X-Requested-With': 'fetch' },
+      });
+      if (res.ok) {
+        indicator.textContent = '✓';
+        indicator.style.color = '#56d364';
+        // Reload to refresh the recipe totals + per-row nutrition cells.
+        setTimeout(() => window.location.reload(), 300);
+      } else {
+        indicator.textContent = 'error';
+        indicator.style.color = '#f85149';
+      }
+    } catch (err) {
+      indicator.textContent = 'error';
+      indicator.style.color = '#f85149';
+    }
+  };
+
+  input.addEventListener('input', () => {
+    // Live-preview the amount cell as the user types.
+    const val = parseFloat(input.value);
+    if (amountCell && servingSize > 0 && val > 0) {
+      amountCell.textContent = fmtAmount(val * servingSize);
+    }
+    clearTimeout(timer);
+    timer = setTimeout(save, 700);
+  });
+  input.addEventListener('blur', () => { clearTimeout(timer); save(); });
+});
+
+// Photo preview
+const imageInput = document.getElementById('imageInput');
+if (imageInput) {
+  imageInput.addEventListener('change', function() {
+    const file = this.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = e => {
+      const preview = document.getElementById('imgPreview');
+      const empty = document.getElementById('imgPreviewEmpty');
+      if (preview) {
+        preview.src = e.target.result;
+        preview.style.display = '';
+      }
+      if (empty) empty.style.display = 'none';
+    };
+    reader.readAsDataURL(file);
+  });
+}
+</script>
+{% endblock %}

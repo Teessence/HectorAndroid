@@ -1,0 +1,76 @@
+{# Renders <tr> rows for the ingredients table. Used both inline (initial page
+   render) and as the AJAX response body for infinite scroll. Caller must
+   provide: ingredients (iterable), targets (dict). #}
+
+{% macro val_pct(value, target, fmt='%.1f') %}
+  {%- if value -%}
+    {{ fmt|format(value) }}{%- if target and target > 0 -%}
+      <span class="text-secondary" style="font-size:.7rem">&nbsp;({{ "%.1f"|format(value / target * 100) }}%)</span>
+    {%- endif -%}
+  {%- else -%}—{%- endif -%}
+{% endmacro %}
+
+{% for i in ingredients %}
+{% set cpu = (i.package_cost / i.package_size) if i.package_size else 0 %}
+{% set cps = (cpu * i.serving_size) if i.serving_size else 0 %}
+<tr data-href="/ingredients/{{ i.id }}/edit" style="cursor:pointer">
+  <td class="fw-semibold ing-name-cell" style="min-width:160px;max-width:220px">
+    <div class="d-flex align-items-center gap-2">
+      {% if i.image_filename %}
+      <img src="/static/ingredient_images/{{ i.image_filename }}"
+           style="width:72px;height:72px;object-fit:contain;border-radius:8px;border:1px solid var(--hx-border);background:var(--hx-bg);padding:3px;flex-shrink:0">
+      {% else %}
+      <div style="width:72px;height:72px;border-radius:8px;border:1px solid var(--hx-border);background:var(--hx-panel2);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+        <i class="bi bi-image text-secondary" style="font-size:1.5rem"></i>
+      </div>
+      {% endif %}
+      <span class="ing-name-text" title="{{ i.name }}">{{ i.name }}</span>
+    </div>
+  </td>
+  <td><span class="badge bg-secondary">{{ i.unit }}</span></td>
+  <td class="text-secondary" style="white-space:nowrap">{{ i.shop or '—' }}</td>
+  <td class="text-secondary" style="white-space:nowrap">{{ i.company or '—' }}</td>
+  <td class="text-center text-secondary" style="white-space:nowrap;font-size:.78rem"
+      title="{{ i.last_eaten }}">{{ i.last_eaten | relative_time or '—' }}</td>
+  <td class="text-center text-secondary" style="white-space:nowrap">{{ i.serving_size }} {{ i.unit }}</td>
+  <td class="text-center text-secondary" style="white-space:nowrap">{{ i.package_size }} {{ i.unit }}</td>
+  <td class="text-center" style="white-space:nowrap">
+    <span style="color:#bc8cff">€{{ "%.2f"|format(i.package_cost) }}</span>
+    <br><span class="text-secondary" style="font-size:.72rem">€{{ "%.4f"|format(cpu) }}/{{ i.unit }}</span>
+    <br><span class="text-secondary" style="font-size:.72rem">€{{ "%.3f"|format(cps) }}/serving</span>
+  </td>
+  {# Nutrition #}
+  <td class="text-center" style="color:#79c0ff;white-space:nowrap">{{ val_pct(i.calories, targets.calories, '%.0f') }}</td>
+  <td class="text-center" style="color:#56d364;white-space:nowrap">{{ val_pct(i.protein, targets.protein, '%.1f') }}</td>
+  <td class="text-center" style="color:#56d364">
+    {% if i.calories and i.calories > 0 %}{{ "%.3f"|format(i.protein / i.calories) }}{% else %}—{% endif %}
+  </td>
+  <td class="text-center" style="color:#ffa657;white-space:nowrap">{{ val_pct(i.fat, targets.fat, '%.1f') }}</td>
+  <td class="text-center" style="color:#ff7b72;font-size:.78rem;white-space:nowrap">{{ val_pct(i.saturates, targets.saturates, '%.1f') }}</td>
+  <td class="text-center" style="color:#e3b341;white-space:nowrap">{{ val_pct(i.carbs, targets.carbs, '%.1f') }}</td>
+  <td class="text-center text-secondary" style="white-space:nowrap">{{ val_pct(i.fiber, targets.fiber, '%.1f') }}</td>
+  <td class="text-center text-secondary" style="white-space:nowrap">{{ val_pct(i.sugar, targets.sugar, '%.1f') }}</td>
+  <td class="text-center text-secondary" style="white-space:nowrap">{{ val_pct(i.salt, targets.salt, '%.2f') }}</td>
+  {# Vitamins #}
+  {% for col, v in [('vit_a',i.vit_a),('vit_c',i.vit_c),('vit_d',i.vit_d),('vit_e',i.vit_e),('vit_k',i.vit_k),
+                    ('vit_b1',i.vit_b1),('vit_b2',i.vit_b2),('vit_b3',i.vit_b3),('vit_b6',i.vit_b6),
+                    ('vit_b9',i.vit_b9),('vit_b12',i.vit_b12)] %}
+  <td class="text-center" style="color:#bc8cff;white-space:nowrap">{{ val_pct(v, targets[col], '%.2f') }}</td>
+  {% endfor %}
+  {# Minerals #}
+  {% for col, m in [('calcium',i.calcium),('iron',i.iron),('magnesium',i.magnesium),('phosphorus',i.phosphorus),
+                    ('potassium',i.potassium),('zinc',i.zinc),('selenium',i.selenium),('iodine',i.iodine),
+                    ('copper',i.copper),('manganese',i.manganese)] %}
+  <td class="text-center" style="color:#ffa657;white-space:nowrap">{{ val_pct(m, targets[col], '%.2f') }}</td>
+  {% endfor %}
+  {# Actions — stop propagation so row click doesn't fire #}
+  <td class="text-center" onclick="event.stopPropagation()">
+    <form method="post" action="/ingredients/{{ i.id }}/delete"
+          onsubmit="event.stopPropagation(); return confirm('Delete {{ i.name }}?')">
+      <button class="btn btn-sm btn-outline-danger py-0 px-2">
+        <i class="bi bi-trash"></i>
+      </button>
+    </form>
+  </td>
+</tr>
+{% endfor %}

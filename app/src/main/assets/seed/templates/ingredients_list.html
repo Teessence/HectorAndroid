@@ -1,0 +1,193 @@
+{% extends 'base.html' %}
+{% block title %}Ingredients — Hector{% endblock %}
+{% block content %}
+
+<style>
+  .ing-table th,
+  .ing-table th a.sort-link {
+    text-transform: none !important;
+    letter-spacing: 0 !important;
+  }
+  /* Ingredient name: wrap up to 3 lines, ellipsis after that. */
+  .ing-name-cell { white-space: normal; vertical-align: middle; }
+  .ing-name-text {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    word-break: break-word;
+    line-height: 1.2;
+  }
+  /* Scrollable table area for infinite scroll + sticky header. */
+  .ing-table-scroll {
+    max-height: calc(100vh - 220px);
+    overflow: auto;
+  }
+  .ing-table-scroll thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--hx-panel);  /* matches card bg so content doesn't bleed through */
+  }
+  /* Tiny "loading more…" footer that appears mid-fetch. */
+  #ing-loadmore-row td {
+    text-align: center;
+    color: #8b949e;
+    font-size: .82rem;
+    padding: .6rem;
+  }
+</style>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4 class="fw-bold mb-0"><i class="bi bi-basket me-2"></i>Ingredients</h4>
+  <a href="/ingredients/add" class="btn btn-primary btn-sm">
+    <i class="bi bi-plus-lg me-1"></i>Create
+  </a>
+</div>
+
+<form class="mb-3 d-flex gap-2" method="get">
+  <input type="hidden" name="sort" value="{{ sort_col }}">
+  <input type="hidden" name="dir"  value="{{ sort_dir }}">
+  <input type="search" name="q" class="form-control form-control-sm" style="max-width:280px"
+         placeholder="Search by name, shop, or brand…" value="{{ q }}">
+  <button class="btn btn-outline-secondary btn-sm" type="submit"><i class="bi bi-search"></i></button>
+  {% if q %}<a href="/ingredients" class="btn btn-outline-danger btn-sm"><i class="bi bi-x"></i></a>{% endif %}
+</form>
+
+{% macro th(col, label, title='', align='') %}
+  {% set new_dir = 'asc' if (sort_col == col and sort_dir == 'desc') else 'desc' %}
+  <th title="{{ title or label }}" style="white-space:nowrap" {% if align %}class="{{ align }}"{% endif %}>
+    <a href="?sort={{ col }}&dir={{ new_dir }}{% if q %}&q={{ q }}{% endif %}"
+       class="sort-link {{ 'active' if sort_col == col }}">
+      {{ label }}{% if sort_col == col %}<i class="bi bi-caret-{{ 'up' if sort_dir == 'asc' else 'down' }}-fill ms-1" style="font-size:.65rem"></i>{% endif %}
+    </a>
+  </th>
+{% endmacro %}
+
+{% if ingredients %}
+<div class="ing-table-scroll" id="ingTableScroll" style="font-size:.82rem">
+  <table class="table table-hover align-middle mb-0 ing-table" id="ingTable">
+    <thead>
+      <tr>
+        {{ th('name',         'Name') }}
+        {{ th('unit',         'Unit') }}
+        {{ th('shop',         'Shop') }}
+        {{ th('company',      'Brand') }}
+        {{ th('last_eaten',   'Last Eaten', 'Most recent date this ingredient was added to your diary (direct or via recipe)', 'text-center') }}
+        {{ th('serving_size', 'Serving Size', 'Serving Size',    'text-center') }}
+        {{ th('package_size', 'Package Size', 'Package Size',    'text-center') }}
+        {{ th('package_cost', 'Package Cost', 'Package Cost (€)','text-center') }}
+        {# Nutrition #}
+        {{ th('calories',   'Calories',  'Calories (kcal)',       'text-center') }}
+        {{ th('protein',    'Protein',   'Protein (g)',           'text-center') }}
+        {{ th('protein_per_calorie', 'Protein / Calorie', 'Protein per Calorie (g/kcal)', 'text-center') }}
+        {{ th('fat',        'Fat',       'Fat (g)',               'text-center') }}
+        {{ th('saturates',  'Saturates', 'Saturates (g)',         'text-center') }}
+        {{ th('carbs',      'Carbohydrates', 'Carbohydrates (g)', 'text-center') }}
+        {{ th('fiber',      'Fiber',     'Fiber (g)',             'text-center') }}
+        {{ th('sugar',      'Sugar',     'Sugar (g)',             'text-center') }}
+        {{ th('salt',       'Salt',      'Salt (g)',              'text-center') }}
+        {# Vitamins #}
+        {{ th('vit_a',  'Vitamin A',  'Vitamin A (μg)',                'text-center') }}
+        {{ th('vit_c',  'Vitamin C',  'Vitamin C (mg)',                'text-center') }}
+        {{ th('vit_d',  'Vitamin D',  'Vitamin D (μg)',                'text-center') }}
+        {{ th('vit_e',  'Vitamin E',  'Vitamin E (mg)',                'text-center') }}
+        {{ th('vit_k',  'Vitamin K',  'Vitamin K (μg)',                'text-center') }}
+        {{ th('vit_b1', 'Vitamin B1', 'Vitamin B1 Thiamine (mg)',      'text-center') }}
+        {{ th('vit_b2', 'Vitamin B2', 'Vitamin B2 Riboflavin (mg)',    'text-center') }}
+        {{ th('vit_b3', 'Vitamin B3', 'Vitamin B3 Niacin (mg)',        'text-center') }}
+        {{ th('vit_b6', 'Vitamin B6', 'Vitamin B6 (mg)',               'text-center') }}
+        {{ th('vit_b9', 'Vitamin B9', 'Vitamin B9 Folate (μg)',        'text-center') }}
+        {{ th('vit_b12','Vitamin B12','Vitamin B12 (μg)',              'text-center') }}
+        {# Minerals #}
+        {{ th('calcium',    'Calcium',    'Calcium (mg)',    'text-center') }}
+        {{ th('iron',       'Iron',       'Iron (mg)',       'text-center') }}
+        {{ th('magnesium',  'Magnesium',  'Magnesium (mg)',  'text-center') }}
+        {{ th('phosphorus', 'Phosphorus', 'Phosphorus (mg)', 'text-center') }}
+        {{ th('potassium',  'Potassium',  'Potassium (mg)',  'text-center') }}
+        {{ th('zinc',       'Zinc',       'Zinc (mg)',       'text-center') }}
+        {{ th('selenium',   'Selenium',   'Selenium (μg)',   'text-center') }}
+        {{ th('iodine',     'Iodine',     'Iodine (μg)',     'text-center') }}
+        {{ th('copper',     'Copper',     'Copper (mg)',     'text-center') }}
+        {{ th('manganese',  'Manganese',  'Manganese (mg)',  'text-center') }}
+        <th></th>
+      </tr>
+    </thead>
+    <tbody id="ingTbody">
+      {% include '_ingredients_rows.html' %}
+    </tbody>
+  </table>
+</div>
+
+{% else %}
+<div class="text-center py-5 text-secondary">
+  <i class="bi bi-basket" style="font-size:3rem;opacity:.3"></i>
+  <p class="mt-2">No ingredients yet. <a href="/ingredients/add">Add your first one.</a></p>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Click a row → open its edit page. The delete form already does
+// event.stopPropagation on its own click/submit handlers.
+function bindRowClicks(scope) {
+  scope.querySelectorAll('tr[data-href]:not([data-click-bound])').forEach(row => {
+    row.addEventListener('click', e => {
+      if (e.target.closest('form,button,a')) return;
+      window.location = row.dataset.href;
+    });
+    row.dataset.clickBound = '1';
+  });
+}
+
+const tbody = document.getElementById('ingTbody');
+if (tbody) bindRowClicks(tbody);
+
+// ── Infinite scroll ─────────────────────────────────────────────────────────
+const scrollContainer = document.getElementById('ingTableScroll');
+let nextPage  = 2;
+let hasMore   = {{ 'true' if has_more else 'false' }};
+let loading   = false;
+
+async function loadMore() {
+  if (loading || !hasMore) return;
+  loading = true;
+  try {
+    const params = new URLSearchParams(window.location.search);
+    params.set('page', nextPage);
+    const res = await fetch('/ingredients?' + params.toString(), {
+      headers: { 'X-Requested-With': 'fetch', 'Accept': 'application/json' },
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.html) tbody.insertAdjacentHTML('beforeend', data.html);
+    bindRowClicks(tbody);
+    hasMore = !!data.has_more;
+    nextPage += 1;
+  } finally {
+    loading = false;
+  }
+}
+
+if (scrollContainer && hasMore) {
+  scrollContainer.addEventListener('scroll', () => {
+    const nearBottom = scrollContainer.scrollTop + scrollContainer.clientHeight
+                       >= scrollContainer.scrollHeight - 200;
+    if (nearBottom) loadMore();
+  });
+  // First batch already in the DOM may be shorter than the viewport (e.g. zoom
+  // out, narrow filter result that overflows). Keep pulling until either the
+  // page fills or we hit the end.
+  const fillToViewport = () => {
+    if (!hasMore || loading) return;
+    if (scrollContainer.scrollHeight <= scrollContainer.clientHeight + 4) {
+      loadMore().then(fillToViewport);
+    }
+  };
+  fillToViewport();
+}
+</script>
+{% endblock %}

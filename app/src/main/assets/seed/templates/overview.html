@@ -1,0 +1,182 @@
+{% extends 'base.html' %}
+{% block title %}Overview {{ date_str }} — Hector{% endblock %}
+{% block content %}
+
+{# ── Date navigation ── #}
+<div class="d-flex align-items-center gap-3 mb-4 day-nav">
+  <a href="/overview/{{ prev_d }}"><i class="bi bi-chevron-left"></i></a>
+  <h5 class="mb-0 fw-bold">
+    {% if date_str == today %}Today — {% endif %}{{ date_str }}
+  </h5>
+  {% if date_str < today %}
+  <a href="/overview/{{ next_d }}"><i class="bi bi-chevron-right"></i></a>
+  {% endif %}
+  <a href="/meals/day/{{ date_str }}" class="btn btn-sm btn-outline-secondary ms-2">
+    <i class="bi bi-egg-fried me-1"></i>Manage Meals
+  </a>
+  <a href="/steps/{{ date_str }}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-person-walking me-1"></i>Log Steps
+  </a>
+</div>
+
+{# ── Summary cards ── #}
+<div class="row g-3 mb-4">
+  {# Intake #}
+  <div class="col-6 col-md-3">
+    <div class="card stat-card h-100 p-3">
+      <div class="stat-lbl"><i class="bi bi-arrow-down-circle me-1 text-info"></i>Caloric Intake</div>
+      <div class="stat-val text-info mt-2">{{ "%.0f"|format(day_totals.calories) }}</div>
+      <div class="text-secondary" style="font-size:.75rem">kcal consumed</div>
+      <hr class="border-secondary my-2">
+      <small class="text-secondary">
+        P {{ "%.1f"|format(day_totals.protein) }}g &nbsp;
+        C {{ "%.1f"|format(day_totals.carbs) }}g &nbsp;
+        F {{ "%.1f"|format(day_totals.fat) }}g
+      </small>
+    </div>
+  </div>
+
+  {# Output #}
+  <div class="col-6 col-md-3">
+    <div class="card stat-card h-100 p-3">
+      <div class="stat-lbl"><i class="bi bi-arrow-up-circle me-1 text-warning"></i>Caloric Output</div>
+      {% if caloric_output %}
+      <div class="stat-val text-warning mt-2">{{ "%.0f"|format(caloric_output) }}</div>
+      <div class="text-secondary" style="font-size:.75rem">kcal burned</div>
+      <hr class="border-secondary my-2">
+      <small class="text-secondary">
+        {% if bmr %}BMR {{ "%.0f"|format(bmr) }} + {% endif %}Steps {{ "%.0f"|format(step_calories) }}
+      </small>
+      {% else %}
+      <div class="stat-val text-secondary mt-2">—</div>
+      <div class="text-secondary" style="font-size:.75rem">set height/DOB in settings</div>
+      {% endif %}
+    </div>
+  </div>
+
+  {# Balance #}
+  <div class="col-6 col-md-3">
+    <div class="card stat-card h-100 p-3">
+      <div class="stat-lbl"><i class="bi bi-scale me-1"></i>Balance</div>
+      {% if balance is not none %}
+        {% if balance < 0 %}
+        <div class="stat-val balance-negative mt-2">{{ "%.0f"|format(balance) }}</div>
+        <div class="text-secondary" style="font-size:.75rem">kcal deficit 🔥</div>
+        {% else %}
+        <div class="stat-val balance-positive mt-2">+{{ "%.0f"|format(balance) }}</div>
+        <div class="text-secondary" style="font-size:.75rem">kcal surplus</div>
+        {% endif %}
+        <hr class="border-secondary my-2">
+        <small class="text-secondary">≈ {{ "%.0f"|format(balance|abs / 7700 * 1000) }} g weight {{ 'loss' if balance < 0 else 'gain' }}</small>
+      {% else %}
+      <div class="stat-val text-secondary mt-2">—</div>
+      <div class="text-secondary" style="font-size:.75rem">log steps &amp; set profile</div>
+      {% endif %}
+    </div>
+  </div>
+
+  {# Weight #}
+  <div class="col-6 col-md-3">
+    <div class="card stat-card h-100 p-3">
+      <div class="stat-lbl"><i class="bi bi-person me-1 text-success"></i>Weight</div>
+      {% if weight %}
+      <div class="stat-val text-success mt-2">{{ "%.1f"|format(weight) }}</div>
+      <div class="text-secondary" style="font-size:.75rem">kg current</div>
+      {% if projected_weight %}
+      <hr class="border-secondary my-2">
+      <small class="text-secondary">
+        Projected end-of-day:
+        <span class="{{ 'balance-negative' if projected_weight < weight else 'balance-positive' }}">
+          {{ "%.2f"|format(projected_weight) }} kg
+        </span>
+      </small>
+      {% endif %}
+      {% if target_weight %}
+      <div class="mt-2">
+        <small class="text-secondary">Target: {{ target_weight }} kg</small>
+        {% set pct = [(weight - target_weight) / (weight - target_weight + 0.001) * 0, 0]|max %}
+        <div class="progress mt-1">
+          {% set sw = namespace(v=0) %}
+          <div class="progress-bar bg-success" style="width:{{ pct }}%"></div>
+        </div>
+      </div>
+      {% endif %}
+      {% else %}
+      <div class="stat-val text-secondary mt-2">—</div>
+      <div class="text-secondary" style="font-size:.75rem">log weight in Steps</div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{# ── BMR breakdown ── #}
+{% if bmr %}
+<div class="card mb-4">
+  <div class="card-body py-2 px-3">
+    <div class="d-flex flex-wrap gap-4 align-items-center" style="font-size:.85rem">
+      <span class="text-secondary"><i class="bi bi-cpu me-1"></i><strong>BMR</strong></span>
+      <span>Weight: <strong>{{ "%.1f"|format(weight) }} kg</strong></span>
+      {% if height %}<span>Height: <strong>{{ height }} cm</strong></span>{% endif %}
+      {% if age %}<span>Age: <strong>{{ age }} yrs</strong></span>{% endif %}
+      <span class="text-warning">BMR = <strong>{{ "%.0f"|format(bmr) }} kcal/day</strong></span>
+      <span class="ms-auto">Steps: <strong>{{ "{:,}".format(steps) }}</strong>
+        → <strong>{{ "%.0f"|format(step_calories) }} kcal</strong></span>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{# ── Steps for the day ── #}
+<div class="row g-3 mb-4">
+  <div class="col-md-4">
+    <div class="card h-100">
+      <div class="card-body p-3">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <h6 class="fw-bold mb-0"><i class="bi bi-person-walking me-1 text-primary"></i>Steps</h6>
+          <a href="/steps/{{ date_str }}" class="btn btn-sm btn-outline-secondary py-0">Edit</a>
+        </div>
+        <div style="font-size:2rem;font-weight:700">{{ "{:,}".format(steps) }}</div>
+        {% if step_calories %}
+        <small class="text-secondary">{{ "%.0f"|format(step_calories) }} kcal burned</small>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-8">
+    <div class="card h-100">
+      <div class="card-body p-3">
+        <h6 class="fw-bold mb-2"><i class="bi bi-egg-fried me-1 text-info"></i>Food Cost</h6>
+        <div style="font-size:2rem;font-weight:700">€{{ "%.2f"|format(day_totals.cost) }}</div>
+        <small class="text-secondary">
+          Fiber: {{ "%.1f"|format(day_totals.fiber) }}g &nbsp;|&nbsp;
+          Sugar: {{ "%.1f"|format(day_totals.sugar) }}g
+        </small>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Macro breakdown bar ── #}
+{% if day_totals.calories > 0 %}
+{% set prot_pct = (day_totals.protein * 4 / day_totals.calories * 100)|round %}
+{% set carb_pct = (day_totals.carbs * 4 / day_totals.calories * 100)|round %}
+{% set fat_pct  = (day_totals.fat * 9 / day_totals.calories * 100)|round %}
+<div class="card mb-4">
+  <div class="card-body p-3">
+    <h6 class="fw-bold mb-2">Macronutrient Split</h6>
+    <div class="progress mb-2" style="height:18px;border-radius:6px">
+      <div class="progress-bar bg-success" style="width:{{ prot_pct }}%" title="Protein {{ prot_pct }}%">P {{ prot_pct }}%</div>
+      <div class="progress-bar bg-warning" style="width:{{ carb_pct }}%" title="Carbs {{ carb_pct }}%">C {{ carb_pct }}%</div>
+      <div class="progress-bar bg-danger" style="width:{{ fat_pct }}%"  title="Fat {{ fat_pct }}%">F {{ fat_pct }}%</div>
+    </div>
+    <small class="text-secondary">
+      Protein {{ "%.1f"|format(day_totals.protein) }}g ({{ prot_pct }}%) &nbsp;·&nbsp;
+      Carbs {{ "%.1f"|format(day_totals.carbs) }}g ({{ carb_pct }}%) &nbsp;·&nbsp;
+      Fat {{ "%.1f"|format(day_totals.fat) }}g ({{ fat_pct }}%)
+    </small>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}
