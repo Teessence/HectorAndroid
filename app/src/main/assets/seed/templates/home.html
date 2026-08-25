@@ -1,15 +1,15 @@
 {% extends 'base.html' %}
 {% block title %}Hector{% endblock %}
 {% block content %}
-<div class="mx-auto" style="max-width:640px">
+<div class="d-flex flex-column justify-content-center align-items-center text-center"
+     style="min-height:70vh">
 
   {% if not has_target %}
     <div class="card">
       <div class="card-body p-4 text-center">
         <h4 class="mb-3"><i class="bi bi-bullseye me-1"></i>Set your goal weight</h4>
         <p class="text-secondary mb-4">
-          Hector works out the total steps between your starting weight and your
-          goal. Add your target weight in Settings to start tracking progress.
+          Add your target weight in Settings to start tracking progress.
         </p>
         <a href="/settings" class="btn btn-primary">Go to Settings</a>
       </div>
@@ -27,52 +27,11 @@
     </div>
 
   {% else %}
-    <div class="text-center py-3">
-      <div class="text-secondary text-uppercase" style="letter-spacing:.12em;font-size:.78rem">
-        Steps toward your goal weight
-      </div>
-
-      <div style="font-size:2.6rem;font-weight:800;line-height:1.1;color:#0d6efd">
-        <span id="recorded">{{ '{:,}'.format(total_recorded) }}</span>
-        <span class="text-secondary" style="font-weight:600">/</span>
-        <span id="required">{{ '{:,}'.format(total_required) }}</span>
-        <span class="text-secondary" style="font-size:1.6rem;font-weight:700">(<span id="percent">{{ percent_str }}</span>%)</span>
-      </div>
-
-      <div id="sub-label" class="mb-4">
-        {% if goal_reached %}
-          <span class="fs-5">🎉 You've walked off your goal weight!</span>
-        {% else %}
-          <span class="text-secondary">total steps recorded / steps needed to reach your goal weight</span>
-        {% endif %}
-      </div>
-
-      <div class="progress mb-4" role="progressbar" style="height:10px">
-        <div id="bar" class="progress-bar" style="width:{{ percent if percent else 0 }}%"></div>
-      </div>
-
-      <div class="d-flex justify-content-center gap-4 flex-wrap">
-        <div>
-          <div class="fw-bold fs-5"><span id="today_steps">{{ '{:,}'.format(today_steps) }}</span></div>
-          <div class="text-secondary small">steps today</div>
-        </div>
-        <div>
-          <div class="fw-bold fs-5">{{ starting_weight }} kg</div>
-          <div class="text-secondary small">start</div>
-        </div>
-        <div>
-          <div class="fw-bold fs-5">{{ current_weight }} kg</div>
-          <div class="text-secondary small">now (est.)</div>
-        </div>
-        <div>
-          <div class="fw-bold fs-5">{{ target_weight }} kg</div>
-          <div class="text-secondary small">goal</div>
-        </div>
-      </div>
-
-      <div class="mt-4">
-        <a href="/analytics" class="btn btn-sm btn-outline-secondary">Open full analytics</a>
-      </div>
+    <div style="font-size:2.4rem;font-weight:800;line-height:1.15;color:#0d6efd">
+      <span id="recorded">{{ '{:,}'.format(total_recorded) }}</span>
+      <span class="text-secondary" style="font-weight:600">/</span>
+      <span id="required">{{ '{:,}'.format(total_required) }}</span>
+      <span style="font-size:1.5rem;font-weight:700">(<span id="percent">{{ percent_str }}</span>%)</span>
     </div>
   {% endif %}
 </div>
@@ -92,16 +51,8 @@
       set('recorded', fmt(d.total_recorded));
       set('required', fmt(d.total_required));
       set('percent', d.percent_str);
-      set('today_steps', fmt(d.today_steps));
-      const bar = document.getElementById('bar');
-      if (bar && d.percent !== null && d.percent !== undefined) bar.style.width = d.percent + '%';
-      if (d.goal_reached) {
-        const lbl = document.getElementById('sub-label');
-        if (lbl) lbl.innerHTML = '<span class="fs-5">🎉 You\'ve walked off your goal weight!</span>';
-      }
     } catch (e) { /* ignore, retry next tick */ }
   }
-  // Refresh every 20s so steps logged by the phone sensor show up live.
   setInterval(poll, 20000);
 })();
 </script>

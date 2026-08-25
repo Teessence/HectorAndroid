@@ -14,11 +14,13 @@ import android.webkit.WebViewClient
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.chaquo.python.Python
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var webView: WebView
+    private lateinit var swipeRefresh: SwipeRefreshLayout
     private var fileChooserCallback: ValueCallback<Array<Uri>>? = null
 
     private val fileChooserLauncher = registerForActivityResult(
@@ -40,7 +42,9 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
 
         webView = WebView(this)
-        setContentView(webView)
+        swipeRefresh = SwipeRefreshLayout(this)
+        swipeRefresh.addView(webView)
+        setContentView(swipeRefresh)
 
         with(webView.settings) {
             javaScriptEnabled = true
@@ -53,7 +57,15 @@ class MainActivity : AppCompatActivity() {
             allowFileAccess = true
         }
 
-        webView.webViewClient = WebViewClient()
+        // Pull down from the top to refresh (like Fitbit and other step apps):
+        // reloads the current page, which re-reads today's steps from the DB.
+        swipeRefresh.setOnRefreshListener { webView.reload() }
+        webView.webViewClient = object : WebViewClient() {
+            override fun onPageFinished(view: WebView?, url: String?) {
+                super.onPageFinished(view, url)
+                swipeRefresh.isRefreshing = false
+            }
+        }
         webView.webChromeClient = object : WebChromeClient() {
             override fun onShowFileChooser(
                 view: WebView?,

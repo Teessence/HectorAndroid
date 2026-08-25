@@ -115,11 +115,10 @@ def _steps_to_target(current_weight, target_weight):
 
 
 def _pct_str(p):
-    """Format a percentage without a trailing '.0' (e.g. 1.0 -> '1', 0.5 -> '0.5')."""
+    """Format a percentage to 3 decimal places (e.g. 1.0 -> '1.000')."""
     if p is None:
         return None
-    r = round(p, 1)
-    return str(int(r)) if r == int(r) else ('%.1f' % r)
+    return '%.3f' % p
 
 
 def compute_home_status():

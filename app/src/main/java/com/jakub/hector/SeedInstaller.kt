@@ -18,7 +18,7 @@ import java.io.File
  */
 object SeedInstaller {
 
-    private const val APP_FILES_VERSION = 3
+    private const val APP_FILES_VERSION = 4
 
     fun ensureSeed(ctx: Context, dataDir: File) {
         dataDir.mkdirs()
