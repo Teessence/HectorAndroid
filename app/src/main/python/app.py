@@ -190,17 +190,24 @@ def create_app():
 
     @app.route('/')
     def index():
-        return redirect(url_for('analytics'))
+        import home_calc
+        status = home_calc.compute_home_status()
+        return render_template('home.html', active_page='home', **status)
+
+    @app.route('/api/home_status')
+    def api_home_status():
+        import home_calc
+        return jsonify(home_calc.compute_home_status())
 
     @app.route('/dashboard')
     @app.route('/dashboard/<date_str>')
     def dashboard(date_str=None):
-        return redirect(url_for('analytics'))
+        return redirect(url_for('index'))
 
     @app.route('/setup', methods=['GET', 'POST'])
     def setup():
         if is_setup_complete():
-            return redirect(url_for('analytics'))
+            return redirect(url_for('index'))
         if request.method == 'POST':
             sd = request.form.get('starting_date', '').strip()
             sw = request.form.get('starting_weight', '').strip()
@@ -222,7 +229,7 @@ def create_app():
             conn.commit()
             conn.close()
             flash('Welcome to Hector! Set your profile in Settings.', 'success')
-            return redirect(url_for('analytics'))
+            return redirect(url_for('index'))
         return render_template('setup.html')
 
     # ── Settings ──────────────────────────────────────────────────────────────

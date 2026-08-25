@@ -29,7 +29,6 @@
   <li class="nav-item"><button class="nav-link"        data-bs-toggle="tab" data-bs-target="#set-vitamins"  type="button"><i class="bi bi-capsule me-1"></i>Vitamins</button></li>
   <li class="nav-item"><button class="nav-link"        data-bs-toggle="tab" data-bs-target="#set-minerals"  type="button"><i class="bi bi-moisture me-1"></i>Minerals</button></li>
   <li class="nav-item"><button class="nav-link"        data-bs-toggle="tab" data-bs-target="#set-steprates" type="button"><i class="bi bi-person-walking me-1"></i>Step Rates</button></li>
-  <li class="nav-item"><button class="nav-link"        data-bs-toggle="tab" data-bs-target="#set-garmin"    type="button"><i class="bi bi-watch me-1"></i>Garmin</button></li>
   <li class="nav-item"><button class="nav-link"        data-bs-toggle="tab" data-bs-target="#set-display"   type="button"><i class="bi bi-palette me-1"></i>Display</button></li>
   <li class="nav-item"><button class="nav-link"        data-bs-toggle="tab" data-bs-target="#set-reset"     type="button"><i class="bi bi-arrow-counterclockwise me-1 text-danger"></i>Reset</button></li>
 </ul>
@@ -293,131 +292,7 @@
   </div>
 </div>
 
-{# ─────────────────────────────── GARMIN ─────────────────────────────── #}
-<div class="tab-pane fade" id="set-garmin" role="tabpanel">
-  <div class="row g-3">
-    <div class="col-md-7">
-      <div class="card">
-        <div class="card-body p-4">
-          <h6 class="text-secondary text-uppercase mb-3" style="font-size:.72rem;letter-spacing:.1em">
-            <i class="bi bi-watch me-1"></i>Garmin Connect — Auto-fetch Steps
-          </h6>
 
-          {% if not garmin_status.available %}
-          <div class="alert alert-warning py-2" style="font-size:.85rem">
-            <strong>garminconnect not installed.</strong> Run
-            <code>pip install garminconnect</code> and restart Hector.
-            {% if garmin_status.import_error %}
-            <div class="text-secondary mt-1" style="font-size:.75rem">{{ garmin_status.import_error }}</div>
-            {% endif %}
-          </div>
-          {% endif %}
-
-          <div class="form-check form-switch mb-3">
-            <input form="settings-form" class="form-check-input" type="checkbox" role="switch"
-                   id="garmin_enabled" name="garmin_enabled" value="1"
-                   {{ 'checked' if garmin_status.enabled else '' }}>
-            <label class="form-check-label fw-semibold" for="garmin_enabled">
-              Enable auto-fetch on /steps
-            </label>
-          </div>
-
-          <div class="row g-3">
-            <div class="col-md-6">
-              <label class="form-label fw-semibold">Garmin email</label>
-              <input form="settings-form" type="email" name="garmin_email"
-                     class="form-control" autocomplete="off"
-                     value="{{ garmin_status.email }}" placeholder="you@example.com">
-            </div>
-            <div class="col-md-6">
-              <label class="form-label fw-semibold">Password</label>
-              <input form="settings-form" type="password" name="garmin_password"
-                     class="form-control" autocomplete="new-password"
-                     placeholder="{{ '••••••• (saved)' if garmin_status.has_password else '' }}">
-              <div class="form-text">
-                Leave blank to keep the existing password.
-                <span class="text-warning">Stored as plain text in <code>hector.db</code>.</span>
-              </div>
-            </div>
-            <div class="col-md-4">
-              <label class="form-label fw-semibold">Refresh interval</label>
-              <div class="input-group">
-                <input form="settings-form" type="number" name="garmin_refresh_min"
-                       class="form-control" min="1" step="1"
-                       value="{{ garmin_status.refresh_min }}">
-                <span class="input-group-text">min</span>
-              </div>
-              <div class="form-text">How often /steps re-syncs today's count.</div>
-            </div>
-          </div>
-
-          <hr class="border-secondary my-4">
-
-          <div class="d-flex align-items-center gap-2">
-            <button type="submit" form="garmin-sync-form" class="btn btn-outline-info"
-                    {{ 'disabled' if not garmin_status.available else '' }}>
-              <i class="bi bi-arrow-repeat me-1"></i>Test / Sync Now
-            </button>
-            <span class="text-secondary" style="font-size:.8rem">
-              Saves credentials via the main Save button first, then click here to attempt a fetch.
-            </span>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="col-md-5">
-      <div class="card h-100">
-        <div class="card-body p-3" style="font-size:.85rem">
-          <h6 class="text-secondary text-uppercase mb-2" style="font-size:.72rem;letter-spacing:.1em">
-            <i class="bi bi-activity me-1"></i>Status
-          </h6>
-          <div class="mb-2">
-            <span class="text-secondary">Last sync:</span>
-            <strong>{{ garmin_status.last_run or '—' }}</strong>
-            {% if garmin_status.last_run %}
-            <span class="text-secondary">({{ garmin_status.last_run|relative_time }})</span>
-            {% endif %}
-          </div>
-          <div class="mb-2">
-            <span class="text-secondary">Next refresh in:</span>
-            {% if garmin_status.next_refresh_seconds is not none %}
-              {% set secs = garmin_status.next_refresh_seconds %}
-              {% if secs <= 0 %}
-                <strong class="text-info">due now</strong>
-              {% else %}
-                <strong>{{ (secs // 60) }}m {{ (secs % 60) }}s</strong>
-              {% endif %}
-            {% else %}
-              <strong>—</strong>
-            {% endif %}
-          </div>
-          {% if garmin_status.last_error %}
-          <div class="alert alert-danger py-2 mt-2 mb-0" style="font-size:.78rem">
-            <strong>Last error:</strong> {{ garmin_status.last_error }}
-            {% if 'MFA' in garmin_status.last_error or 'mfa' in garmin_status.last_error %}
-            <div class="text-secondary mt-1">
-              MFA is enabled on your Garmin account — auto-fetch can't prompt for codes from a web app.
-              Disable MFA, or use an app-specific approach.
-            </div>
-            {% endif %}
-          </div>
-          {% else %}
-          <div class="text-secondary" style="font-size:.78rem">No errors.</div>
-          {% endif %}
-          <hr class="border-secondary my-2">
-          <div class="text-secondary" style="font-size:.75rem">
-            Past days are locked once auto-fetched (after 12:00 noon the next day) so
-            you can't add more steps to them. A manual edit on /steps clears the lock.
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-
-{# Sync Now lives outside settings-form so it doesn't accidentally re-save settings. #}
-<form id="garmin-sync-form" method="post" action="/garmin/sync-now"></form>
 
 {# ────────────────────────────── DISPLAY ─────────────────────────────── #}
 <div class="tab-pane fade" id="set-display" role="tabpanel">
