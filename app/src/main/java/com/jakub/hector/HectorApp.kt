@@ -18,19 +18,19 @@ class HectorApp : Application() {
     companion object {
         const val PORT = 8765
         const val BASE_URL = "http://127.0.0.1:$PORT/"
-        lateinit var dataDir: File
+        lateinit var hectorDataDir: File
     }
 
     override fun onCreate() {
         super.onCreate()
-        dataDir = File(filesDir, "hector_data")
-        SeedInstaller.ensureSeed(this, dataDir)
+        hectorDataDir = File(filesDir, "hector_data")
+        SeedInstaller.ensureSeed(this, hectorDataDir)
 
         if (!Python.isStarted()) {
             Python.start(AndroidPlatform(this))
         }
         Python.getInstance()
             .getModule("mobile_main")
-            .callAttr("configure", dataDir.absolutePath)
+            .callAttr("configure", hectorDataDir.absolutePath)
     }
 }
