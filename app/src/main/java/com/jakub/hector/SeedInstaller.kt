@@ -4,7 +4,7 @@ import android.content.Context
 import java.io.File
 
 /**
- * Copies the bundled seed data (assets/seed/**) into writable storage the first
+ * Copies the bundled seed data (under assets/seed) into writable storage the first
  * time the app runs. The seed contains hector.db plus the templates/ and
  * static/ folders Flask serves. Bump SEED_VERSION to force a re-copy after a
  * bundled-data change (this overwrites the DB, so only bump when intended).

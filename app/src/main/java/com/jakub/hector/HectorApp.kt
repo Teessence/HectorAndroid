@@ -19,7 +19,6 @@ class HectorApp : Application() {
         const val PORT = 8765
         const val BASE_URL = "http://127.0.0.1:$PORT/"
         lateinit var dataDir: File
-            private set
     }
 
     override fun onCreate() {
