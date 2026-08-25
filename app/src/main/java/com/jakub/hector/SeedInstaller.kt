@@ -6,27 +6,35 @@ import java.io.File
 /**
  * Installs the bundled data into writable storage.
  *
- * Two independent concerns, so app updates never destroy user data:
- *  - **Database**: copied only if it doesn't already exist. Once the user has a
- *    hector.db on the phone we never overwrite it.
- *  - **App files** (templates/ and static/): these are shipped code, not user
- *    data, so they are re-copied whenever APP_FILES_VERSION increases. Copying
- *    overwrites the bundled files but never deletes extras, so user-uploaded
- *    ingredient photos in static/ingredient_images are preserved.
- *
- * Bump APP_FILES_VERSION whenever the bundled templates or static assets change.
+ * Three independent version markers so updates never destroy user data:
+ *  - **Database** (`.db_version`): copied when missing, or when DB_SEED_VERSION
+ *    increases. Bump DB_SEED_VERSION only when you deliberately want to replace
+ *    the on-device database with the freshly bundled one (this discards any data
+ *    entered on the phone), e.g. to recover from a bad/empty DB.
+ *  - **App files** (`.appfiles_version`): templates/ and static/ are shipped
+ *    code, re-copied when APP_FILES_VERSION increases. Copying overwrites the
+ *    bundled files but never deletes extras, so user-uploaded ingredient photos
+ *    are preserved.
  */
 object SeedInstaller {
 
-    private const val APP_FILES_VERSION = 4
+    private const val DB_SEED_VERSION = 1
+    private const val APP_FILES_VERSION = 5
 
     fun ensureSeed(ctx: Context, dataDir: File) {
         dataDir.mkdirs()
 
-        // 1. Database — seed once, then leave it alone forever.
+        // 1. Database.
         val db = File(dataDir, "hector.db")
-        if (!db.exists()) {
+        val dbMarker = File(dataDir, ".db_version")
+        val dbInstalled = when {
+            dbMarker.exists() -> dbMarker.readText().trim().toIntOrNull() ?: 1
+            db.exists() -> 1   // seeded by an older build that had no db marker
+            else -> 0
+        }
+        if (!db.exists() || dbInstalled < DB_SEED_VERSION) {
             copyAssetFile(ctx, "seed/hector.db", db)
+            dbMarker.writeText(DB_SEED_VERSION.toString())
         }
 
         // 2. App files — refresh when the bundled version is newer.
