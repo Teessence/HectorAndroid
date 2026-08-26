@@ -1,36 +1,56 @@
 {% extends 'base.html' %}
 {% block title %}Setup — Hector{% endblock %}
 {% block content %}
-<div class="row justify-content-center mt-5">
-  <div class="col-md-5">
+<div class="row justify-content-center mt-4">
+  <div class="col-md-6">
     <div class="card shadow-lg">
       <div class="card-body p-4">
         <div class="text-center mb-4">
           <i class="bi bi-heart-pulse-fill text-primary" style="font-size:3rem"></i>
           <h2 class="mt-2 fw-bold">Welcome to Hector</h2>
-          <p class="text-secondary">Let's get you set up. You can always change these in Settings.</p>
+          <p class="text-secondary">Enter your details to get started. You can change any of these later in Settings.</p>
         </div>
         <form method="post">
-          <div class="mb-3">
-            <label class="form-label fw-semibold">Starting Date</label>
-            <input type="date" name="starting_date" class="form-control"
-                   value="{{ today }}" required>
-            <div class="form-text">The date you begin tracking.</div>
+          <div class="row g-3">
+            <div class="col-6">
+              <label class="form-label fw-semibold">Date of birth</label>
+              <input type="date" name="dob" class="form-control" required>
+            </div>
+            <div class="col-6">
+              <label class="form-label fw-semibold">Gender</label>
+              <select name="gender" class="form-select" required>
+                <option value="">— select —</option>
+                <option value="male">Male</option>
+                <option value="female">Female</option>
+              </select>
+            </div>
+            <div class="col-6">
+              <label class="form-label fw-semibold">Height (cm)</label>
+              <input type="number" name="height_cm" class="form-control"
+                     step="0.1" min="80" max="250" placeholder="e.g. 180" required>
+            </div>
+            <div class="col-6">
+              <label class="form-label fw-semibold">Starting date</label>
+              <input type="date" name="starting_date" class="form-control"
+                     value="{{ today }}" required>
+            </div>
+            <div class="col-6">
+              <label class="form-label fw-semibold">Starting weight (kg)</label>
+              <input type="number" name="starting_weight" class="form-control"
+                     step="0.1" min="20" max="300" placeholder="e.g. 85.0" required>
+            </div>
+            <div class="col-6">
+              <label class="form-label fw-semibold">Target weight (kg)</label>
+              <input type="number" name="target_weight" class="form-control"
+                     step="0.1" min="20" max="300" placeholder="e.g. 75.0" required>
+            </div>
           </div>
-          <div class="mb-4">
-            <label class="form-label fw-semibold">Current Weight (kg)</label>
-            <input type="number" name="starting_weight" class="form-control"
-                   step="0.1" min="20" max="300" placeholder="e.g. 85.0" required>
-          </div>
-          <button type="submit" class="btn btn-primary w-100 py-2 fw-semibold">
+          <button type="submit" class="btn btn-primary w-100 py-2 fw-semibold mt-4">
             <i class="bi bi-rocket-takeoff me-1"></i> Start Tracking
           </button>
         </form>
       </div>
     </div>
-    <p class="text-center text-secondary mt-3" style="font-size:.8rem">
-      After setup, go to <strong>Settings</strong> to add your date of birth, height, and target weight.
-    </p>
   </div>
 </div>
 {% endblock %}

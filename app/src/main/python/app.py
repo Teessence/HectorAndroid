@@ -209,26 +209,37 @@ def create_app():
         if is_setup_complete():
             return redirect(url_for('index'))
         if request.method == 'POST':
+            dob = request.form.get('dob', '').strip()
+            gender = request.form.get('gender', '').strip()
+            height = request.form.get('height_cm', '').strip()
             sd = request.form.get('starting_date', '').strip()
             sw = request.form.get('starting_weight', '').strip()
-            if not sd or not sw:
-                flash('Both fields are required.', 'warning')
+            tw = request.form.get('target_weight', '').strip()
+            if not all([dob, gender, height, sd, sw, tw]):
+                flash('All fields are required.', 'warning')
                 return redirect(url_for('setup'))
             try:
                 sw_f = float(sw)
+                tw_f = float(tw)
+                height_f = float(height)
                 datetime.strptime(sd, '%Y-%m-%d')
+                datetime.strptime(dob, '%Y-%m-%d')
             except ValueError:
-                flash('Invalid date or weight.', 'danger')
+                flash('Please check the dates and numbers you entered.', 'danger')
                 return redirect(url_for('setup'))
+            set_setting('dob', dob)
+            set_setting('gender', gender)
+            set_setting('height_cm', str(height_f))
             set_setting('starting_date', sd)
             set_setting('starting_weight', str(sw_f))
+            set_setting('target_weight', str(tw_f))
             conn = get_db()
             conn.execute(
                 'INSERT OR IGNORE INTO daily_steps(date,steps,weight_kg) VALUES(?,0,?)',
                 (sd, sw_f))
             conn.commit()
             conn.close()
-            flash('Welcome to Hector! Set your profile in Settings.', 'success')
+            flash('Welcome to Hector! You can fine-tune everything in Settings.', 'success')
             return redirect(url_for('index'))
         return render_template('setup.html')
 
@@ -902,9 +913,12 @@ def create_app():
             ORDER BY d.slot, d.id
         ''', (date_str,)).fetchall()
         all_ings  = conn.execute(
-            'SELECT id, name, serving_size, unit, shop, company FROM ingredients ORDER BY name'
+            'SELECT id, name, serving_size, unit, shop, company, image_filename '
+            'FROM ingredients ORDER BY name'
         ).fetchall()
-        all_meals = conn.execute('SELECT id, name FROM meals ORDER BY name').fetchall()
+        all_meals = conn.execute(
+            'SELECT id, name, image_filename FROM meals ORDER BY name'
+        ).fetchall()
 
         notes_rows = conn.execute(
             'SELECT slot, note FROM diary_slot_notes WHERE date = ?',

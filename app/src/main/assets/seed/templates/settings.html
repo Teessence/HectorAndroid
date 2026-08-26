@@ -299,7 +299,7 @@
   <div class="card" style="max-width:520px">
     <div class="card-body p-4">
       <h6 class="fw-bold mb-3"><i class="bi bi-palette me-1"></i>Appearance</h6>
-      <form method="post" action="/settings/display">
+      <form method="post" action="/settings/display" onchange="this.submit()">
         <div class="form-check mb-2">
           <input class="form-check-input" type="radio" name="theme" id="theme-dark" value="dark"
                  {{ 'checked' if app_theme != 'light' }}>
@@ -307,14 +307,14 @@
             <i class="bi bi-moon-stars me-1"></i>Dark mode
           </label>
         </div>
-        <div class="form-check mb-3">
+        <div class="form-check mb-2">
           <input class="form-check-input" type="radio" name="theme" id="theme-light" value="light"
                  {{ 'checked' if app_theme == 'light' }}>
           <label class="form-check-label" for="theme-light">
             <i class="bi bi-brightness-high me-1"></i>Light mode
           </label>
         </div>
-        <button class="btn btn-primary btn-sm"><i class="bi bi-check-lg me-1"></i>Save</button>
+        <div class="form-text">Changes apply immediately.</div>
       </form>
     </div>
   </div>

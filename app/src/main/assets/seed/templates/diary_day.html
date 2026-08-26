@@ -24,14 +24,15 @@
   .day-summary-fixed .card-body { padding: .75rem 1rem; }
   .day-summary-fixed table { font-size: .82rem; margin-bottom: 0; }
   .day-summary-fixed .vmrow { font-size: .72rem; }
-  /* Caret points up when collapsed, down (toward the revealed content) when
-     expanded. The base icon is bi-chevron-up. */
+  /* Caret points right when collapsed, rotates down when expanded (the common
+     tree/accordion convention). The base icon is bi-chevron-right. */
+  .summary-caret, .slot-caret { transition: transform .2s; }
   .summary-header[aria-expanded="false"] .summary-caret { transform: rotate(0deg); }
-  .summary-header[aria-expanded="true"]  .summary-caret { transform: rotate(180deg); }
+  .summary-header[aria-expanded="true"]  .summary-caret { transform: rotate(90deg); }
 
   /* Per-slot header caret — now keyed off the toggle button, not the whole header */
   .slot-toggle[aria-expanded="false"] .slot-caret { transform: rotate(0deg); }
-  .slot-toggle[aria-expanded="true"]  .slot-caret { transform: rotate(180deg); }
+  .slot-toggle[aria-expanded="true"]  .slot-caret { transform: rotate(90deg); }
   .slot-toggle:hover { color: #58a6ff !important; }
 
   /* Per-slot full breakdown grid */
@@ -84,6 +85,29 @@
   .ts-dropdown .option, .ts-dropdown .optgroup-header { color: var(--hx-text) !important; }
   .ts-dropdown .optgroup-header { background: var(--hx-panel2) !important; color: #8b949e !important; text-transform: uppercase; letter-spacing: .06em; font-size: .72rem; }
   .ts-dropdown .active { background: #1f6feb !important; color: #fff !important; }
+
+  /* Dropdown rows: thumbnail + name for readability. */
+  .ts-opt { display: flex; align-items: center; gap: .6rem; }
+  .ts-thumb {
+    width: 44px; height: 44px; flex: 0 0 44px; object-fit: contain;
+    border-radius: 6px; border: 1px solid var(--hx-border);
+    background: var(--hx-bg); padding: 2px;
+  }
+  .ts-thumb-ph { display: flex; align-items: center; justify-content: center; color: #8b949e; }
+  .ts-opt-label { flex: 1 1 auto; white-space: normal; line-height: 1.25; }
+  .add-food-form .ts-dropdown .option { padding: .5rem .6rem; }
+
+  /* Mobile: the fixed 450px search box overflows the screen (hiding the navbar
+     hamburger and spilling out of the card), so make the add-food form full
+     width and give the dropdown a big, readable, near-fullscreen size. */
+  @media (max-width: 991.98px) {
+    .add-food-form .item-search-wrap { flex: 1 1 100% !important; min-width: 0 !important; max-width: none !important; }
+    .add-food-form .amount-wrap   { flex: 1 1 45% !important; }
+    .add-food-form .servings-wrap { flex: 1 1 45% !important; }
+    .add-food-form .ts-dropdown { max-width: 100% !important; max-height: 520px !important; }
+    .add-food-form .ts-dropdown .option { padding: .7rem .6rem; font-size: 1rem; }
+    .ts-thumb { width: 52px; height: 52px; flex-basis: 52px; }
+  }
 
   /* Mobile: the meal header is a single justify-between flex row (meal name +
      note on the left, macro totals + Save-as-recipe on the right). On narrow
@@ -188,7 +212,7 @@
               aria-controls="slot-{{ n }}-body"
               data-slot="{{ n }}"
               style="color:var(--hx-text);font-weight:700">
-        <i class="bi bi-chevron-up slot-caret me-1" style="transition:transform .2s"></i>
+        <i class="bi bi-chevron-right slot-caret me-1"></i>
         Meal {{ n }}
       </button>
       <input type="text" class="form-control form-control-sm slot-note-input"
@@ -381,7 +405,9 @@
           {% if all_meals %}
           <optgroup label="Recipes">
             {% for m in all_meals %}
-            <option value="meal:{{ m.id }}">{{ m.name }}</option>
+            <option value="meal:{{ m.id }}"
+                    {% if m.image_filename %}data-image="/static/ingredient_images/{{ m.image_filename }}"{% endif %}
+                    data-kind="meal">{{ m.name }}</option>
             {% endfor %}
           </optgroup>
           {% endif %}
@@ -392,7 +418,9 @@
             {% if i.shop %}{% set _ = tags.append(i.shop) %}{% endif %}
             <option value="ingredient:{{ i.id }}"
                     data-serving-size="{{ i.serving_size }}"
-                    data-unit="{{ i.unit }}">{{ i.name }}{% if tags %} — {{ tags | join(' · ') }}{% endif %} ({{ i.serving_size }}{{ i.unit }}/serving)</option>
+                    data-unit="{{ i.unit }}"
+                    {% if i.image_filename %}data-image="/static/ingredient_images/{{ i.image_filename }}"{% endif %}
+                    data-kind="ingredient">{{ i.name }}{% if tags %} — {{ tags | join(' · ') }}{% endif %} ({{ i.serving_size }}{{ i.unit }}/serving)</option>
             {% endfor %}
           </optgroup>
         </select>
@@ -428,8 +456,7 @@
          role="button" style="cursor:pointer">
       <div class="d-flex align-items-center gap-3 flex-wrap">
         <h6 class="fw-bold mb-0">
-          <i class="bi bi-chevron-up summary-caret me-1"
-             style="transition:transform .2s"></i>
+          <i class="bi bi-chevron-right summary-caret me-1"></i>
           <i class="bi bi-calculator me-1"></i>Summary
         </h6>
         <span class="text-secondary d-none d-md-inline" style="font-size:.78rem">
@@ -769,6 +796,20 @@ document.querySelectorAll('.add-food-form .item-search').forEach(sel => {
         const i = t.indexOf(q);
         return i === -1 ? 0 : 2 - i / (t.length || 1);
       };
+    },
+    render: {
+      option: function(data, escape) {
+        const safe = (window.CSS && CSS.escape) ? CSS.escape(data.value) : data.value;
+        const opt = sel.querySelector('option[value="' + safe + '"]');
+        const img = opt ? opt.getAttribute('data-image') : null;
+        const kind = opt ? opt.getAttribute('data-kind') : '';
+        const thumb = img
+          ? '<img class="ts-thumb" src="' + escape(img) + '">'
+          : '<span class="ts-thumb ts-thumb-ph"><i class="bi bi-'
+            + (kind === 'meal' ? 'journal-text' : 'basket') + '"></i></span>';
+        return '<div class="ts-opt">' + thumb
+          + '<span class="ts-opt-label">' + escape(data.text) + '</span></div>';
+      }
     },
   });
 
