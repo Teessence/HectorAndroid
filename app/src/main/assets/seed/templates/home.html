@@ -1,6 +1,58 @@
 {% extends 'base.html' %}
 {% block title %}Hector{% endblock %}
 {% block content %}
+
+{% set NUTRITION = [
+  ('calories','Calories',''),('protein','Protein','g'),('carbs','Carbohydrates','g'),
+  ('fat','Fat','g'),('saturates','Saturates','g'),('fiber','Fiber','g'),
+  ('sugar','Sugar','g'),('salt','Salt','g'),
+] %}
+{% set VITAMINS = [
+  ('vit_a','Vitamin A','μg'),('vit_c','Vitamin C','mg'),('vit_d','Vitamin D','μg'),
+  ('vit_e','Vitamin E','mg'),('vit_k','Vitamin K','μg'),
+  ('vit_b1','B1','mg'),('vit_b2','B2','mg'),('vit_b3','B3','mg'),
+  ('vit_b6','B6','mg'),('vit_b9','B9','μg'),('vit_b12','B12','μg'),
+] %}
+{% set MINERALS = [
+  ('calcium','Calcium','mg'),('iron','Iron','mg'),('magnesium','Magnesium','mg'),
+  ('phosphorus','Phosphorus','mg'),('potassium','Potassium','mg'),('zinc','Zinc','mg'),
+  ('selenium','Selenium','μg'),('iodine','Iodine','μg'),('copper','Copper','mg'),
+  ('manganese','Manganese','mg'),
+] %}
+
+{# One nutrient tile: rows sorted by % of daily target attained (desc), each on
+   its own line with a progress bar; ~3 visible then it scrolls. #}
+{% macro nutri_tile(title, icon, items, color) %}
+  {% set rows = [] %}
+  {% for col, label, unit in items %}
+    {% set v = nutri_totals[col] if nutri_totals else 0 %}
+    {% set t = targets[col] if targets else 0 %}
+    {% set p = (v / t * 100) if (t and t > 0) else -1 %}
+    {% set _ = rows.append((p, label, unit, v, t)) %}
+  {% endfor %}
+  {% set rows = rows | sort(reverse=true) %}
+  <div class="card mb-3">
+    <div class="card-body py-3">
+      <div class="text-secondary text-uppercase mb-2" style="letter-spacing:.1em;font-size:.72rem">
+        <i class="bi {{ icon }} me-1"></i>{{ title }}
+      </div>
+      <div class="nutri-scroll">
+        {% for p, label, unit, v, t in rows %}
+          <div class="nutri-row">
+            <div class="d-flex justify-content-between" style="font-size:.85rem">
+              <span class="text-secondary">{{ label }}{% if unit %} ({{ unit }}){% endif %}</span>
+              <span>{{ "%.1f"|format(v) }} / {{ "%.0f"|format(t) if t else '—' }}{% if t and t > 0 %} <span class="text-secondary">({{ "%.0f"|format(p if p >= 0 else 0) }}%)</span>{% endif %}</span>
+            </div>
+            <div class="progress" style="height:5px">
+              <div class="progress-bar" style="width:{{ 100 if p > 100 else (p if p >= 0 else 0) }}%;background:{{ '#56d364' if p >= 100 else color }}"></div>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+{% endmacro %}
+
 <div class="mx-auto" style="max-width:680px">
 
   {% if missing_details %}
@@ -24,7 +76,7 @@
   <div class="card mb-3">
     <div class="card-body text-center py-4">
       <div class="text-secondary text-uppercase mb-2" style="letter-spacing:.1em;font-size:.72rem">
-        <i class="bi bi-person-walking me-1"></i>Steps to goal weight
+        <i class="bi bi-person-walking me-1"></i>Steps
       </div>
       {% if total_required is not none %}
         <div style="font-size:2.1rem;font-weight:800;line-height:1.1;color:#0d6efd">
@@ -39,6 +91,9 @@
         <div class="text-secondary mt-2">
           Steps left: <span id="steps_left" class="fw-bold text-body">{{ '{:,}'.format(steps_left) }}</span>
         </div>
+        <div class="text-secondary">
+          Thousands left: <span id="thousands_left" class="fw-bold text-body">{{ '{:,}'.format(thousands_left) }}</span>
+        </div>
         <div id="hx-info-box" class="small text-info mt-2" style="min-height:1.2em"></div>
       {% else %}
         <div class="text-secondary">Set your starting and goal weight to see this.</div>
@@ -50,7 +105,7 @@
   <div class="card mb-3">
     <div class="card-body text-center py-4">
       <div class="text-secondary text-uppercase mb-2" style="letter-spacing:.1em;font-size:.72rem">
-        <i class="bi bi-fire me-1"></i>Calories today
+        <i class="bi bi-fire me-1"></i>Calories
       </div>
       <div style="font-size:1.9rem;font-weight:800;line-height:1.1;color:#79c0ff">
         <span id="today_calories">{{ '{:,}'.format(today_calories) }}</span>
@@ -73,7 +128,7 @@
   <div class="card mb-3">
     <div class="card-body text-center py-4">
       <div class="text-secondary text-uppercase mb-2" style="letter-spacing:.1em;font-size:.72rem">
-        <i class="bi bi-droplet-half me-1"></i>Hydration today
+        <i class="bi bi-droplet-half me-1"></i>Hydration
       </div>
       <div style="font-size:1.9rem;font-weight:800;line-height:1.1;color:#58a6ff">
         <span id="hydration_ml">{{ '{:,}'.format(hydration_ml) }}</span>
@@ -84,12 +139,21 @@
     </div>
   </div>
 
+  {# ── Nutrition / Vitamins / Minerals tiles ─────────────────────────────── #}
+  {{ nutri_tile('Nutrition', 'bi-pie-chart', NUTRITION, '#79c0ff') }}
+  {{ nutri_tile('Vitamins',  'bi-capsule',   VITAMINS,   '#a371f7') }}
+  {{ nutri_tile('Minerals',  'bi-gem',       MINERALS,   '#58a6ff') }}
+
 </div>
 {% endblock %}
 
 {% block scripts %}
 <style>
   .hx-info { cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
+  /* ~3 rows visible, then scroll. Fixed px (not vh) to avoid WebView collapse. */
+  .nutri-scroll { max-height: 100px; overflow-y: auto; }
+  .nutri-row { margin-bottom: .55rem; }
+  .nutri-row:last-child { margin-bottom: 0; }
 </style>
 <script>
 (function () {
@@ -115,6 +179,9 @@
         setText('required', fmt(d.total_required));
         setText('percent', d.percent_str);
         setText('steps_left', fmt(d.steps_left));
+        if (d.thousands_left !== null && d.thousands_left !== undefined) {
+          setText('thousands_left', fmt(d.thousands_left));
+        }
       }
       setText('today_calories', fmt(d.today_calories));
       setText('hydration_ml', fmt(d.hydration_ml));

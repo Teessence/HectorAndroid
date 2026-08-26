@@ -26,7 +26,9 @@
   .day-summary-fixed .vmrow { font-size: .72rem; }
   /* Caret points right when collapsed, rotates down when expanded (the common
      tree/accordion convention). The base icon is bi-chevron-right. */
-  .summary-caret, .slot-caret { transition: transform .2s; }
+  /* display:inline-block is required — CSS transforms have no visual effect on
+     default inline <i> elements, so without it the caret never rotates. */
+  .summary-caret, .slot-caret { display: inline-block; transition: transform .2s; }
   .summary-header[aria-expanded="false"] .summary-caret { transform: rotate(0deg); }
   .summary-header[aria-expanded="true"]  .summary-caret { transform: rotate(90deg); }
 

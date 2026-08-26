@@ -207,8 +207,17 @@ def compute_home_status():
                         percent = min(100.0, total_recorded / total_required * 100.0)
 
         # ── Calories tile ──────────────────────────────────────────────────
-        today_calories = int(round(calc_day_totals(today)['calories']))
+        day_totals = calc_day_totals(today)
+        today_calories = int(round(day_totals['calories']))
         calorie_target = _calorie_target()
+
+        # Full nutrient totals + targets for the Nutrition/Vitamins/Minerals tiles.
+        try:
+            import app as _hector_app
+            targets = _hector_app.get_targets()
+        except Exception:
+            targets = {}
+        nutri_totals = {k: round(v, 3) for k, v in day_totals.items()}
         calorie_target_int = int(round(calorie_target)) if calorie_target is not None else None
         calorie_diff = (today_calories - calorie_target_int) if calorie_target_int is not None else None
 
@@ -230,6 +239,7 @@ def compute_home_status():
             'percent': percent,
             'percent_str': _pct_str(percent),
             'steps_left': steps_left,
+            'thousands_left': ((steps_left + 999) // 1000) if steps_left is not None else None,
             'today_steps': today_steps,
             'goal_reached': goal_reached,
             # calories tile
@@ -239,6 +249,9 @@ def compute_home_status():
             # hydration tile
             'hydration_ml': hydration_ml,
             'hydration_target': HYDRATION_TARGET_ML,
+            # nutrition / vitamins / minerals tiles
+            'nutri_totals': nutri_totals,
+            'targets': targets,
             'today_date': today,
         }
     finally:
