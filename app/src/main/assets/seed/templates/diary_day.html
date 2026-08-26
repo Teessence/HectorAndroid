@@ -24,13 +24,14 @@
   .day-summary-fixed .card-body { padding: .75rem 1rem; }
   .day-summary-fixed table { font-size: .82rem; margin-bottom: 0; }
   .day-summary-fixed .vmrow { font-size: .72rem; }
-  /* Caret rotates when the summary is expanded */
-  .summary-header[aria-expanded="false"] .summary-caret { transform: rotate(180deg); }
-  .summary-header[aria-expanded="true"]  .summary-caret { transform: rotate(0deg); }
+  /* Caret points up when collapsed, down (toward the revealed content) when
+     expanded. The base icon is bi-chevron-up. */
+  .summary-header[aria-expanded="false"] .summary-caret { transform: rotate(0deg); }
+  .summary-header[aria-expanded="true"]  .summary-caret { transform: rotate(180deg); }
 
   /* Per-slot header caret — now keyed off the toggle button, not the whole header */
-  .slot-toggle[aria-expanded="false"] .slot-caret { transform: rotate(180deg); }
-  .slot-toggle[aria-expanded="true"]  .slot-caret { transform: rotate(0deg); }
+  .slot-toggle[aria-expanded="false"] .slot-caret { transform: rotate(0deg); }
+  .slot-toggle[aria-expanded="true"]  .slot-caret { transform: rotate(180deg); }
   .slot-toggle:hover { color: #58a6ff !important; }
 
   /* Per-slot full breakdown grid */
@@ -96,6 +97,19 @@
     }
     .slot-header > span { width: 100%; }
     .slot-header .slot-note-input { max-width: none !important; }
+
+    /* The fixed bottom summary panel doesn't render reliably in the Android
+       WebView (position:fixed inside the refresh wrapper), so on mobile show it
+       as a normal in-flow card at the end of the diary instead. */
+    .day-summary-fixed {
+      position: static !important;
+      max-height: none !important;
+      box-shadow: none !important;
+      border: 1px solid var(--hx-border);
+      border-radius: .5rem;
+      margin-top: 1rem;
+    }
+    body { padding-bottom: 1rem !important; }
   }
 </style>
 

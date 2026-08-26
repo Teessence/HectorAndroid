@@ -1,56 +1,132 @@
 {% extends 'base.html' %}
 {% block title %}Hector{% endblock %}
 {% block content %}
-<div class="d-flex flex-column justify-content-center align-items-center text-center"
-     style="min-height:70vh">
+<div class="mx-auto" style="max-width:680px">
 
-  {% if not has_target %}
-    <div class="card">
+  {% if missing_details %}
+    <div class="card mb-3" style="border-color:#d29922">
       <div class="card-body p-4 text-center">
-        <h4 class="mb-3"><i class="bi bi-bullseye me-1"></i>Set your goal weight</h4>
-        <p class="text-secondary mb-4">
-          Add your target weight in Settings to start tracking progress.
+        <h4 class="mb-2"><i class="bi bi-person-lines-fill me-1"></i>Complete your profile</h4>
+        <p class="text-secondary mb-3">
+          Hector needs a few details before it can track your progress:
         </p>
-        <a href="/settings" class="btn btn-primary">Go to Settings</a>
-      </div>
-    </div>
-
-  {% elif total_required is none %}
-    <div class="card">
-      <div class="card-body p-4 text-center">
-        <h4 class="mb-3">Not enough data yet</h4>
-        <p class="text-secondary mb-4">
-          Set your starting and target weight so Hector can work out the goal.
+        <p class="mb-3">
+          {% for m in missing_details %}
+            <span class="badge rounded-pill text-bg-secondary me-1 mb-1" style="font-size:.8rem">{{ m }}</span>
+          {% endfor %}
         </p>
-        <a href="/settings" class="btn btn-outline-primary">Settings</a>
+        <a href="/settings" class="btn btn-primary">Enter details in Settings</a>
       </div>
-    </div>
-
-  {% else %}
-    <div style="font-size:2.4rem;font-weight:800;line-height:1.15;color:#0d6efd">
-      <span id="recorded">{{ '{:,}'.format(total_recorded) }}</span>
-      <span class="text-secondary" style="font-weight:600">/</span>
-      <span id="required">{{ '{:,}'.format(total_required) }}</span>
-      <span style="font-size:1.5rem;font-weight:700">(<span id="percent">{{ percent_str }}</span>%)</span>
     </div>
   {% endif %}
+
+  {# ── Steps tile ────────────────────────────────────────────────────────── #}
+  <div class="card mb-3">
+    <div class="card-body text-center py-4">
+      <div class="text-secondary text-uppercase mb-2" style="letter-spacing:.1em;font-size:.72rem">
+        <i class="bi bi-person-walking me-1"></i>Steps to goal weight
+      </div>
+      {% if total_required is not none %}
+        <div style="font-size:2.1rem;font-weight:800;line-height:1.1;color:#0d6efd">
+          <span class="hx-info" id="recorded"
+                data-info="Total steps you've recorded since your starting date.">{{ '{:,}'.format(total_recorded) }}</span>
+          <span class="text-secondary" style="font-weight:600">/</span>
+          <span class="hx-info" id="required"
+                data-info="Total steps needed to walk from your starting weight down to your goal weight.">{{ '{:,}'.format(total_required) }}</span>
+          <span style="font-size:1.4rem;font-weight:700">(<span class="hx-info" id="percent"
+                data-info="Percentage of the way to your goal weight.">{{ percent_str }}</span>%)</span>
+        </div>
+        <div class="text-secondary mt-2">
+          Steps left: <span id="steps_left" class="fw-bold text-body">{{ '{:,}'.format(steps_left) }}</span>
+        </div>
+        <div id="hx-info-box" class="small text-info mt-2" style="min-height:1.2em"></div>
+      {% else %}
+        <div class="text-secondary">Set your starting and goal weight to see this.</div>
+      {% endif %}
+    </div>
+  </div>
+
+  {# ── Calories tile ─────────────────────────────────────────────────────── #}
+  <div class="card mb-3">
+    <div class="card-body text-center py-4">
+      <div class="text-secondary text-uppercase mb-2" style="letter-spacing:.1em;font-size:.72rem">
+        <i class="bi bi-fire me-1"></i>Calories today
+      </div>
+      <div style="font-size:1.9rem;font-weight:800;line-height:1.1;color:#79c0ff">
+        <span id="today_calories">{{ '{:,}'.format(today_calories) }}</span>
+        <span class="text-secondary" style="font-weight:600">/</span>
+        {% if calorie_target is not none %}
+          <span id="calorie_target">{{ '{:,}'.format(calorie_target) }}</span>
+          {% set over = calorie_diff > 0 %}
+          <span id="calorie_diff" style="font-size:1.25rem;font-weight:700;color:{{ '#f85149' if over else '#56d364' }}">({{ '+' if over else '-' }}{{ '{:,}'.format(calorie_diff|abs) }})</span>
+        {% else %}
+          <span class="text-secondary">—</span>
+        {% endif %}
+      </div>
+      <div class="text-secondary small mt-2">
+        {% if calorie_target is not none %}calories eaten / daily target{% else %}add your profile to compute a target{% endif %}
+      </div>
+    </div>
+  </div>
+
+  {# ── Hydration tile ────────────────────────────────────────────────────── #}
+  <div class="card mb-3">
+    <div class="card-body text-center py-4">
+      <div class="text-secondary text-uppercase mb-2" style="letter-spacing:.1em;font-size:.72rem">
+        <i class="bi bi-droplet-half me-1"></i>Hydration today
+      </div>
+      <div style="font-size:1.9rem;font-weight:800;line-height:1.1;color:#58a6ff">
+        <span id="hydration_ml">{{ '{:,}'.format(hydration_ml) }}</span>
+        <span class="text-secondary" style="font-weight:600">/</span>
+        <span id="hydration_target">{{ '{:,}'.format(hydration_target) }}</span>
+        <span class="text-secondary" style="font-size:1.15rem">ml</span>
+      </div>
+    </div>
+  </div>
+
 </div>
 {% endblock %}
 
 {% block scripts %}
+<style>
+  .hx-info { cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
+</style>
 <script>
 (function () {
   function fmt(n) { try { return Number(n).toLocaleString(); } catch (e) { return n; } }
+
+  // Click a number to show what it means.
+  document.querySelectorAll('.hx-info').forEach(function (el) {
+    el.addEventListener('click', function () {
+      var box = document.getElementById('hx-info-box');
+      if (box) box.textContent = el.dataset.info || '';
+    });
+  });
+
+  function setText(id, v) { var el = document.getElementById(id); if (el) el.textContent = v; }
+
   async function poll() {
     try {
       const r = await fetch('/api/home_status', { cache: 'no-store' });
       if (!r.ok) return;
       const d = await r.json();
-      if (d.total_required === null || d.total_required === undefined) return;
-      const set = function (id, v) { const el = document.getElementById(id); if (el) el.textContent = v; };
-      set('recorded', fmt(d.total_recorded));
-      set('required', fmt(d.total_required));
-      set('percent', d.percent_str);
+      if (d.total_required !== null && d.total_required !== undefined) {
+        setText('recorded', fmt(d.total_recorded));
+        setText('required', fmt(d.total_required));
+        setText('percent', d.percent_str);
+        setText('steps_left', fmt(d.steps_left));
+      }
+      setText('today_calories', fmt(d.today_calories));
+      setText('hydration_ml', fmt(d.hydration_ml));
+      if (d.calorie_target !== null && d.calorie_target !== undefined) {
+        setText('calorie_target', fmt(d.calorie_target));
+        const diffEl = document.getElementById('calorie_diff');
+        if (diffEl && d.calorie_diff !== null && d.calorie_diff !== undefined) {
+          const over = d.calorie_diff > 0;
+          diffEl.textContent = '(' + (over ? '+' : '-') + fmt(Math.abs(d.calorie_diff)) + ')';
+          diffEl.style.color = over ? '#f85149' : '#56d364';
+        }
+      }
     } catch (e) { /* ignore, retry next tick */ }
   }
   setInterval(poll, 20000);

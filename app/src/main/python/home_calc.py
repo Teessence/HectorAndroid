@@ -121,6 +121,44 @@ def _pct_str(p):
     return '%.3f' % p
 
 
+# Profile details the home screen needs before it can show the goal.
+REQUIRED_DETAILS = [
+    ('dob', 'Date of birth'),
+    ('height_cm', 'Height'),
+    ('gender', 'Gender'),
+    ('starting_date', 'Starting date'),
+    ('starting_weight', 'Starting weight'),
+    ('target_weight', 'Target weight'),
+]
+
+HYDRATION_TARGET_ML = 2000
+
+
+def _calorie_deficit():
+    raw = get_setting('calorie_deficit')
+    try:
+        return int(float(raw)) if raw not in (None, '') else 250
+    except (TypeError, ValueError):
+        return 250
+
+
+def _calorie_target():
+    """Auto daily calorie target = BMR(current weight, height, age, gender) minus
+    the configured deficit. None if any input is missing."""
+    weight = get_current_weight()
+    height = _f(get_setting('height_cm'))
+    dob = get_setting('dob')
+    age = calc_age(dob) if dob else None
+    gender = (get_setting('gender') or '').strip().lower() or None
+    if not (weight and height and age):
+        return None
+    try:
+        bmr = calc_bmr(weight, float(height), age, gender)
+    except (TypeError, ValueError):
+        return None
+    return max(0.0, bmr - _calorie_deficit())
+
+
 def compute_home_status():
     conn = get_db()
     try:
@@ -129,12 +167,18 @@ def compute_home_status():
         target_weight = _f(get_setting('target_weight'))
         setup_complete = starting_weight is not None and starting_date is not None
 
+        missing_details = [
+            label for key, label in REQUIRED_DETAILS
+            if not (get_setting(key) or '').strip()
+        ]
+        details_complete = not missing_details
+
         today = date.today().strftime('%Y-%m-%d')
         trow = conn.execute('SELECT steps FROM daily_steps WHERE date=?', (today,)).fetchone()
         today_steps = int(trow['steps']) if trow and trow['steps'] else 0
 
-        # Left number: steps recorded from the starting date onward (the journey
-        # that this goal is measured against — not any pre-start history).
+        # ── Steps tile ──────────────────────────────────────────────────────
+        # Left number: steps recorded from the starting date onward.
         if starting_date:
             rec = conn.execute(
                 'SELECT COALESCE(SUM(steps), 0) AS s FROM daily_steps WHERE date >= ?',
@@ -144,36 +188,58 @@ def compute_home_status():
             rec = conn.execute('SELECT COALESCE(SUM(steps), 0) AS s FROM daily_steps').fetchone()
         total_recorded = int(rec['s']) if rec and rec['s'] is not None else 0
 
-        # Right number: the whole-journey goal — steps to get from the day-one
-        # (starting) weight all the way down to the target weight. Fixed goal.
+        # Right number: fixed whole-journey goal (starting weight -> target).
         total_required = None
         percent = None
         goal_reached = False
+        steps_left = None
         current_weight = None
         if setup_complete:
             current_weight = _predicted_current_weight(conn)
             if target_weight is not None and starting_weight is not None:
                 total_required = _steps_to_target(starting_weight, target_weight)
                 if total_required is not None:
+                    steps_left = max(0, total_required - total_recorded)
                     if total_required <= 0:
                         goal_reached = True
                         percent = 100.0
                     else:
                         percent = min(100.0, total_recorded / total_required * 100.0)
 
+        # ── Calories tile ──────────────────────────────────────────────────
+        today_calories = int(round(calc_day_totals(today)['calories']))
+        calorie_target = _calorie_target()
+        calorie_target_int = int(round(calorie_target)) if calorie_target is not None else None
+        calorie_diff = (today_calories - calorie_target_int) if calorie_target_int is not None else None
+
+        # ── Hydration tile ─────────────────────────────────────────────────
+        hrow = conn.execute('SELECT ml FROM daily_hydration WHERE date=?', (today,)).fetchone()
+        hydration_ml = int(hrow['ml']) if hrow and hrow['ml'] else 0
+
         return {
             'setup_complete': setup_complete,
+            'details_complete': details_complete,
+            'missing_details': missing_details,
             'has_target': target_weight is not None,
             'starting_weight': starting_weight,
             'target_weight': target_weight,
             'current_weight': round(current_weight, 1) if current_weight is not None else None,
+            # steps tile
             'total_required': total_required,
             'total_recorded': total_recorded,
             'percent': percent,
             'percent_str': _pct_str(percent),
+            'steps_left': steps_left,
             'today_steps': today_steps,
-            'today_date': today,
             'goal_reached': goal_reached,
+            # calories tile
+            'today_calories': today_calories,
+            'calorie_target': calorie_target_int,
+            'calorie_diff': calorie_diff,
+            # hydration tile
+            'hydration_ml': hydration_ml,
+            'hydration_target': HYDRATION_TARGET_ML,
+            'today_date': today,
         }
     finally:
         conn.close()
