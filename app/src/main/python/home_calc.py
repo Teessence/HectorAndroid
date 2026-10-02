@@ -6,7 +6,7 @@ the user's current weight from their all-time calorie balance, then sums the
 steps needed (bucket by bucket, since calories-per-step changes with weight) to
 burn off the remaining kilograms down to the target weight.
 """
-from datetime import date
+from datetime import date, datetime, timedelta
 
 from database import (
     get_db, get_setting, calc_day_totals, calc_bmr, calc_age,
@@ -21,66 +21,49 @@ def _f(v):
         return None
 
 
-def _predicted_current_weight(conn):
-    """Replicates the Analytics forecast: actual post-start weight if logged,
-    else starting weight adjusted by the all-time calorie balance."""
+def _weight_this_morning(conn, today):
+    """Forecast weight at the start of `today`.
+
+    Walks every day from the starting date up to yesterday. A logged weight
+    resets the baseline; otherwise the weight drifts by that day's calorie
+    balance (food eaten - BMR - steps burned) / 7700. A weight logged today
+    wins outright. Today's own steps are deliberately left out — the caller
+    subtracts them step-for-step so walking visibly shrinks the target."""
     starting_weight = _f(get_setting('starting_weight'))
     starting_date = get_setting('starting_date')
+    if starting_weight is None or not starting_date:
+        return get_current_weight()
     height = _f(get_setting('height_cm'))
     dob = get_setting('dob')
     gender = get_setting('gender')
     age = calc_age(dob) if dob else None
 
-    # A real weight reading logged after the start date wins outright.
-    if starting_date:
-        row = conn.execute(
-            'SELECT weight_kg FROM daily_steps '
-            'WHERE weight_kg IS NOT NULL AND date > ? ORDER BY date DESC LIMIT 1',
-            (starting_date,)
-        ).fetchone()
-        if row:
-            return float(row['weight_kg'])
+    rows = conn.execute(
+        'SELECT date, steps, weight_kg FROM daily_steps WHERE date >= ? AND date <= ?',
+        (starting_date, today)).fetchall()
+    step_map = {r['date']: r for r in rows}
+    se = step_map.get(today)
+    if se and se['weight_kg']:
+        return float(se['weight_kg'])
 
-    if starting_weight is None:
-        return get_current_weight()
+    days = sorted({r['date'] for r in rows if r['date'] < today and (r['steps'] or r['weight_kg'])} |
+                  {r['date'] for r in conn.execute(
+                      'SELECT DISTINCT date FROM diary_entries WHERE date >= ? AND date < ?',
+                      (starting_date, today))})
 
-    # Days that have steps or diary entries, in order.
-    series = conn.execute('''
-        SELECT date FROM daily_steps WHERE steps > 0
-        UNION
-        SELECT DISTINCT date FROM diary_entries
-        ORDER BY date
-    ''').fetchall()
-    step_map = {r['date']: r for r in conn.execute(
-        'SELECT date, steps, weight_kg FROM daily_steps').fetchall()}
-
-    last_baseline = starting_weight
+    baseline = starting_weight
     balance = 0.0
-    total_intake = 0.0
-    total_output = 0.0
-    for r in series:
-        d = r['date']
+    for d in days:
         se = step_map.get(d)
-        s = se['steps'] if se else 0
         if se and se['weight_kg']:
-            w_today = float(se['weight_kg'])
-            last_baseline = w_today
+            baseline = float(se['weight_kg'])
             balance = 0.0
-        elif last_baseline is not None:
-            w_today = last_baseline + balance / 7700
-        else:
-            w_today = None
+        w_day = baseline + balance / 7700
+        s = (se['steps'] or 0) if se else 0
         food = calc_day_totals(d)['calories']
-        bmr = calc_bmr(w_today, height, age, gender) if (w_today and height and age) else None
-        step_cal = s * calories_per_step(w_today) if w_today else 0
-        output = (bmr + step_cal) if bmr else step_cal
-        bal = (food - output) if output else 0
-        balance += bal
-        total_intake += food or 0
-        total_output += output or 0
-
-    total_change_kg = (total_intake - total_output) / 7700
-    return starting_weight + total_change_kg
+        bmr = calc_bmr(w_day, height, age, gender) if (height and age) else 0
+        balance += food - bmr - s * calories_per_step(w_day)
+    return baseline + balance / 7700
 
 
 def _steps_to_target(current_weight, target_weight):
@@ -159,7 +142,62 @@ def _calorie_target():
     return max(0.0, bmr - _calorie_deficit())
 
 
-def compute_home_status():
+RANGES = [
+    ('today', 'Today'),
+    ('yesterday', 'Yesterday'),
+    ('this_week', 'Current week'),
+    ('last_week', 'Last week'),
+    ('this_month', 'Current month'),
+    ('last_month', 'Last month'),
+    ('this_year', 'Current year'),
+    ('custom', 'Custom range'),
+]
+
+
+def resolve_range(key, start=None, end=None):
+    """Map a range key (+ custom dates) to (key, start_date, end_date).
+    Weeks start on Monday; current periods end today, never in the future."""
+    today = date.today()
+    if key == 'yesterday':
+        s = e = today - timedelta(days=1)
+    elif key == 'this_week':
+        s, e = today - timedelta(days=today.weekday()), today
+    elif key == 'last_week':
+        e = today - timedelta(days=today.weekday() + 1)
+        s = e - timedelta(days=6)
+    elif key == 'this_month':
+        s, e = today.replace(day=1), today
+    elif key == 'last_month':
+        e = today.replace(day=1) - timedelta(days=1)
+        s = e.replace(day=1)
+    elif key == 'this_year':
+        s, e = today.replace(month=1, day=1), today
+    elif key == 'custom':
+        try:
+            s = datetime.strptime(start, '%Y-%m-%d').date()
+            e = datetime.strptime(end, '%Y-%m-%d').date()
+        except (TypeError, ValueError):
+            return resolve_range('today')
+        if s > e:
+            s, e = e, s
+        e = min(e, today)
+        s = min(s, e)
+    else:
+        key, s, e = 'today', today, today
+    return key, s, e
+
+
+def _range_totals(conn, start, end):
+    """Summed diary nutrient totals over [start, end] (inclusive)."""
+    total = calc_day_totals('0000-00-00')  # all-zero totals dict
+    for r in conn.execute('SELECT DISTINCT date FROM diary_entries WHERE date BETWEEN ? AND ?',
+                          (start, end)).fetchall():
+        for k, v in calc_day_totals(r['date']).items():
+            total[k] = total.get(k, 0.0) + (v or 0.0)
+    return total
+
+
+def compute_home_status(range_key='today', range_from=None, range_to=None):
     conn = get_db()
     try:
         starting_weight = _f(get_setting('starting_weight'))
@@ -174,68 +212,58 @@ def compute_home_status():
         details_complete = not missing_details
 
         today = date.today().strftime('%Y-%m-%d')
+        range_key, r_start, r_end = resolve_range(range_key, range_from, range_to)
+        start_s, end_s = r_start.strftime('%Y-%m-%d'), r_end.strftime('%Y-%m-%d')
+        days = (r_end - r_start).days + 1
+
         trow = conn.execute('SELECT steps FROM daily_steps WHERE date=?', (today,)).fetchone()
         today_steps = int(trow['steps']) if trow and trow['steps'] else 0
 
         # ── Steps tile ──────────────────────────────────────────────────────
-        # Left number: steps recorded from the starting date onward.
-        if starting_date:
-            rec = conn.execute(
-                'SELECT COALESCE(SUM(steps), 0) AS s FROM daily_steps WHERE date >= ?',
-                (starting_date,)
-            ).fetchone()
-        else:
-            rec = conn.execute('SELECT COALESCE(SUM(steps), 0) AS s FROM daily_steps').fetchone()
-        total_recorded = int(rec['s']) if rec and rec['s'] is not None else 0
-
-        # Right number: fixed whole-journey goal (starting weight -> target).
-        total_required = None
+        # Steps still needed from this morning's weight, minus what's been
+        # walked today: every step taken today comes straight off the number.
+        morning_weight = None
+        weight_now = None
+        steps_required = None
         percent = None
-        goal_reached = False
-        steps_left = None
-        current_weight = None
-        if setup_complete:
-            current_weight = _predicted_current_weight(conn)
-            if target_weight is not None and starting_weight is not None:
-                total_required = _steps_to_target(starting_weight, target_weight)
-                if total_required is not None:
-                    steps_left = max(0, total_required - total_recorded)
-                    if total_required <= 0:
-                        goal_reached = True
-                        percent = 100.0
-                    else:
-                        percent = min(100.0, total_recorded / total_required * 100.0)
+        if setup_complete and target_weight is not None:
+            morning_weight = _weight_this_morning(conn, today)
+            if morning_weight is not None:
+                from_morning = _steps_to_target(morning_weight, target_weight)
+                if from_morning is not None:
+                    steps_required = max(0, from_morning - today_steps)
+                weight_now = morning_weight - today_steps * calories_per_step(morning_weight) / 7700
+                if starting_weight is not None and starting_weight > target_weight:
+                    lost = starting_weight - weight_now
+                    percent = max(0.0, min(100.0, lost / (starting_weight - target_weight) * 100.0))
+                elif steps_required == 0:
+                    percent = 100.0
 
-        # "From today" view: steps still needed from today's (forecast) weight,
-        # and progress measured in kilograms already lost.
-        now_required = None
-        now_percent = None
-        if current_weight is not None and target_weight is not None:
-            now_required = _steps_to_target(current_weight, target_weight)
-            if starting_weight is not None and starting_weight > target_weight:
-                lost = starting_weight - current_weight
-                now_percent = max(0.0, min(100.0, lost / (starting_weight - target_weight) * 100.0))
-            elif now_required == 0:
-                now_percent = 100.0
+        srow = conn.execute(
+            'SELECT COALESCE(SUM(steps), 0) AS s FROM daily_steps WHERE date BETWEEN ? AND ?',
+            (start_s, end_s)).fetchone()
+        range_steps = int(srow['s'] or 0)
 
-        # ── Calories tile ──────────────────────────────────────────────────
-        day_totals = calc_day_totals(today)
-        today_calories = int(round(day_totals['calories']))
+        # ── Calories / nutrients over the selected range ────────────────────
+        totals = _range_totals(conn, start_s, end_s)
+        range_calories = int(round(totals['calories']))
         calorie_target = _calorie_target()
-
-        # Full nutrient totals + targets for the Nutrition/Vitamins/Minerals tiles.
         try:
             import app as _hector_app
             targets = _hector_app.get_targets()
         except Exception:
             targets = {}
-        nutri_totals = {k: round(v, 3) for k, v in day_totals.items()}
-        calorie_target_int = int(round(calorie_target)) if calorie_target is not None else None
-        calorie_diff = (today_calories - calorie_target_int) if calorie_target_int is not None else None
+        # Targets are per day; over a range compare against target × days.
+        range_targets = {k: v * days for k, v in targets.items()}
+        nutri_totals = {k: round(v, 3) for k, v in totals.items()}
+        calorie_target_int = int(round(calorie_target * days)) if calorie_target is not None else None
+        calorie_diff = (range_calories - calorie_target_int) if calorie_target_int is not None else None
 
-        # ── Hydration tile ─────────────────────────────────────────────────
-        hrow = conn.execute('SELECT ml FROM daily_hydration WHERE date=?', (today,)).fetchone()
-        hydration_ml = int(hrow['ml']) if hrow and hrow['ml'] else 0
+        # ── Hydration over the selected range ───────────────────────────────
+        hrow = conn.execute(
+            'SELECT COALESCE(SUM(ml), 0) AS ml FROM daily_hydration WHERE date BETWEEN ? AND ?',
+            (start_s, end_s)).fetchone()
+        hydration_ml = int(hrow['ml'] or 0)
 
         return {
             'setup_complete': setup_complete,
@@ -245,31 +273,32 @@ def compute_home_status():
             'starting_weight': starting_weight,
             'starting_date': starting_date,
             'target_weight': target_weight,
-            'current_weight': round(current_weight, 1) if current_weight is not None else None,
+            # selected range
+            'range_key': range_key,
+            'range_from': start_s,
+            'range_to': end_s,
+            'range_days': days,
+            'ranges': RANGES,
             # steps tile
-            'total_required': total_required,
-            'total_recorded': total_recorded,
+            'morning_weight': round(morning_weight, 1) if morning_weight is not None else None,
+            'steps_required': steps_required,
+            'thousands_left': ((steps_required + 999) // 1000) if steps_required is not None else None,
             'percent': percent,
             'percent_str': _pct_str(percent),
-            'steps_left': steps_left,
-            'thousands_left': ((steps_left + 999) // 1000) if steps_left is not None else None,
+            'kg_to_go': round(max(0.0, weight_now - target_weight), 2)
+                        if (weight_now is not None and target_weight is not None) else None,
             'today_steps': today_steps,
-            'goal_reached': goal_reached,
-            'now_required': now_required,
-            'now_thousands': ((now_required + 999) // 1000) if now_required is not None else None,
-            'now_percent_str': _pct_str(now_percent),
-            'kg_to_go': round(max(0.0, current_weight - target_weight), 1)
-                        if (current_weight is not None and target_weight is not None) else None,
+            'range_steps': range_steps,
             # calories tile
-            'today_calories': today_calories,
+            'today_calories': range_calories,
             'calorie_target': calorie_target_int,
             'calorie_diff': calorie_diff,
             # hydration tile
             'hydration_ml': hydration_ml,
-            'hydration_target': HYDRATION_TARGET_ML,
+            'hydration_target': HYDRATION_TARGET_ML * days,
             # nutrition / vitamins / minerals tiles
             'nutri_totals': nutri_totals,
-            'targets': targets,
+            'targets': range_targets,
             'today_date': today,
         }
     finally:

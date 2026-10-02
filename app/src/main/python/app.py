@@ -191,21 +191,24 @@ def create_app():
     @app.route('/')
     def index():
         import home_calc
-        status = home_calc.compute_home_status()
+        status = home_calc.compute_home_status(*_home_range_args())
         return render_template('home.html', active_page='home', **status)
 
     @app.route('/api/home_status')
     def api_home_status():
         import home_calc
-        return jsonify(home_calc.compute_home_status())
+        return jsonify(home_calc.compute_home_status(*_home_range_args()))
+
+    def _home_range_args():
+        return (request.args.get('range', 'today'),
+                request.args.get('from'), request.args.get('to'))
 
     @app.route('/api/nutrient_suggestions/<col>')
     def api_nutrient_suggestions(col):
         import suggest
         if col not in NUTRIENT_FIELDS:
             return jsonify({'error': 'unknown nutrient'}), 404
-        mode = 'density' if request.args.get('mode') == 'density' else 'serving'
-        return jsonify(suggest.nutrient_suggestions(col, get_targets(), mode))
+        return jsonify(suggest.nutrient_suggestions(col, get_targets(), *_home_range_args()))
 
     @app.route('/dashboard')
     @app.route('/dashboard/<date_str>')
