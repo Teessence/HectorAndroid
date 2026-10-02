@@ -30,6 +30,7 @@
   <li class="nav-item"><button class="nav-link"        data-bs-toggle="tab" data-bs-target="#set-minerals"  type="button"><i class="bi bi-moisture me-1"></i>Minerals</button></li>
   <li class="nav-item"><button class="nav-link"        data-bs-toggle="tab" data-bs-target="#set-steprates" type="button"><i class="bi bi-person-walking me-1"></i>Step Rates</button></li>
   <li class="nav-item"><button class="nav-link"        data-bs-toggle="tab" data-bs-target="#set-display"   type="button"><i class="bi bi-palette me-1"></i>Display</button></li>
+  <li class="nav-item"><button class="nav-link"        data-bs-toggle="tab" data-bs-target="#set-backup"    type="button"><i class="bi bi-cloud-arrow-down me-1"></i>Backup</button></li>
   <li class="nav-item"><button class="nav-link"        data-bs-toggle="tab" data-bs-target="#set-reset"     type="button"><i class="bi bi-arrow-counterclockwise me-1 text-danger"></i>Reset</button></li>
 </ul>
 
@@ -320,6 +321,52 @@
   </div>
 </div>
 
+{# ─────────────────────────────── BACKUP ─────────────────────────────── #}
+<div class="tab-pane fade" id="set-backup" role="tabpanel">
+  <div class="row g-3" style="max-width:860px">
+    <div class="col-md-6">
+      <div class="card h-100">
+        <div class="card-body p-4">
+          <h6 class="text-secondary text-uppercase mb-2" style="font-size:.72rem;letter-spacing:.1em">
+            <i class="bi bi-cloud-arrow-down me-1"></i>Export
+          </h6>
+          <p class="text-secondary mb-3" style="font-size:.85rem">
+            Saves <strong class="text-body-emphasis">everything</strong> — profile, targets, ingredients,
+            recipes, diary, steps, weights, hydration, notes and photos — into one <code>.zip</code>.
+            Keep it somewhere off the phone (Google Drive, email to yourself).
+          </p>
+          <a href="/backup/export" class="btn btn-primary">
+            <i class="bi bi-download me-1"></i>Export backup
+          </a>
+          <div class="text-secondary small mt-2">
+            Last export: {{ last_backup_at | relative_time if last_backup_at else 'never' }}
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="card h-100">
+        <div class="card-body p-4">
+          <h6 class="text-secondary text-uppercase mb-2" style="font-size:.72rem;letter-spacing:.1em">
+            <i class="bi bi-cloud-arrow-up me-1"></i>Import
+          </h6>
+          <p class="text-secondary mb-3" style="font-size:.85rem">
+            Restores a backup and <strong class="text-body-emphasis">replaces all data on this phone</strong>.
+            A copy of the current data is kept as <code>hector.db.pre-import</code>.
+          </p>
+          <form method="post" action="/backup/import" enctype="multipart/form-data"
+                onsubmit="return confirm('Replace ALL data on this phone with the backup?');">
+            <input type="file" name="backup_file" class="form-control form-control-sm mb-2" required>
+            <button type="submit" class="btn btn-outline-warning">
+              <i class="bi bi-upload me-1"></i>Import backup
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 {# ─────────────────────────────── RESET ──────────────────────────────── #}
 <div class="tab-pane fade" id="set-reset" role="tabpanel">
   <div class="card border-danger" style="border-width:1px!important">
@@ -354,6 +401,14 @@
 {% endblock %}
 
 {% block scripts %}
+<script>
+// ?tab=backup (etc.) opens that tab, e.g. after an import error redirect.
+(function() {
+  const tab = new URLSearchParams(location.search).get('tab');
+  const btn = tab && document.querySelector('.settings-tabs button[data-bs-target="#set-' + tab + '"]');
+  if (btn) bootstrap.Tab.getOrCreateInstance(btn).show();
+})();
+</script>
 <script>
 (function() {
   const saveBtn = document.getElementById('settingsSaveBtn');

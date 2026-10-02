@@ -7,15 +7,19 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.webkit.URLUtil
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.chaquo.python.Python
+import java.net.HttpURLConnection
+import java.net.URL
 
 class MainActivity : AppCompatActivity() {
 
@@ -29,6 +33,18 @@ class MainActivity : AppCompatActivity() {
         val uris = WebChromeClient.FileChooserParams.parseResult(result.resultCode, result.data)
         fileChooserCallback?.onReceiveValue(uris)
         fileChooserCallback = null
+    }
+
+    // WebView ignores downloads by default. For a download (the backup export)
+    // we ask where to save it, then stream the URL from the local server there.
+    private var pendingDownloadUrl: String? = null
+
+    private val saveDocumentLauncher = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("application/zip")
+    ) { dest ->
+        val url = pendingDownloadUrl
+        pendingDownloadUrl = null
+        if (dest != null && url != null) saveDownload(url, dest)
     }
 
     private val permissionLauncher = registerForActivityResult(
@@ -65,6 +81,10 @@ class MainActivity : AppCompatActivity() {
                 super.onPageFinished(view, url)
                 swipeRefresh.isRefreshing = false
             }
+        }
+        webView.setDownloadListener { url, _, contentDisposition, mimeType, _ ->
+            pendingDownloadUrl = url
+            saveDocumentLauncher.launch(URLUtil.guessFileName(url, contentDisposition, mimeType))
         }
         webView.webChromeClient = object : WebChromeClient() {
             override fun onShowFileChooser(
@@ -108,6 +128,31 @@ class MainActivity : AppCompatActivity() {
         } else {
             super.onBackPressed()
         }
+    }
+
+    private fun saveDownload(url: String, dest: Uri) {
+        Thread {
+            val ok = try {
+                val conn = URL(url).openConnection() as HttpURLConnection
+                try {
+                    conn.inputStream.use { input ->
+                        contentResolver.openOutputStream(dest)!!.use { output -> input.copyTo(output) }
+                    }
+                } finally {
+                    conn.disconnect()
+                }
+                true
+            } catch (e: Exception) {
+                false
+            }
+            runOnUiThread {
+                Toast.makeText(
+                    this,
+                    if (ok) "Backup saved" else "Saving the backup failed",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }.start()
     }
 
     // ---- Permissions & step service ---------------------------------------

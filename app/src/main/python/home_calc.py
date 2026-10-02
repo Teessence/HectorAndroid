@@ -206,6 +206,18 @@ def compute_home_status():
                     else:
                         percent = min(100.0, total_recorded / total_required * 100.0)
 
+        # "From today" view: steps still needed from today's (forecast) weight,
+        # and progress measured in kilograms already lost.
+        now_required = None
+        now_percent = None
+        if current_weight is not None and target_weight is not None:
+            now_required = _steps_to_target(current_weight, target_weight)
+            if starting_weight is not None and starting_weight > target_weight:
+                lost = starting_weight - current_weight
+                now_percent = max(0.0, min(100.0, lost / (starting_weight - target_weight) * 100.0))
+            elif now_required == 0:
+                now_percent = 100.0
+
         # ── Calories tile ──────────────────────────────────────────────────
         day_totals = calc_day_totals(today)
         today_calories = int(round(day_totals['calories']))
@@ -231,6 +243,7 @@ def compute_home_status():
             'missing_details': missing_details,
             'has_target': target_weight is not None,
             'starting_weight': starting_weight,
+            'starting_date': starting_date,
             'target_weight': target_weight,
             'current_weight': round(current_weight, 1) if current_weight is not None else None,
             # steps tile
@@ -242,6 +255,11 @@ def compute_home_status():
             'thousands_left': ((steps_left + 999) // 1000) if steps_left is not None else None,
             'today_steps': today_steps,
             'goal_reached': goal_reached,
+            'now_required': now_required,
+            'now_thousands': ((now_required + 999) // 1000) if now_required is not None else None,
+            'now_percent_str': _pct_str(now_percent),
+            'kg_to_go': round(max(0.0, current_weight - target_weight), 1)
+                        if (current_weight is not None and target_weight is not None) else None,
             # calories tile
             'today_calories': today_calories,
             'calorie_target': calorie_target_int,

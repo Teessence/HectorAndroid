@@ -28,24 +28,23 @@
     {% set v = nutri_totals[col] if nutri_totals else 0 %}
     {% set t = targets[col] if targets else 0 %}
     {% set p = (v / t * 100) if (t and t > 0) else -1 %}
-    {% set _ = rows.append((p, label, unit, v, t)) %}
+    {% set _ = rows.append((p, label, unit, v, t, col)) %}
   {% endfor %}
   {% set rows = rows | sort(reverse=true) %}
-  <div class="card mb-3">
-    <div class="card-body py-3">
-      <div class="text-secondary text-uppercase mb-2" style="letter-spacing:.1em;font-size:.72rem">
-        <i class="bi {{ icon }} me-1"></i>{{ title }}
-      </div>
+  <div class="card hx-tile mb-3" style="--accent:{{ color }}">
+    <div class="card-body">
+      <div class="hx-tile-label mb-2"><i class="bi {{ icon }} me-1"></i>{{ title }}</div>
       <div class="nutri-scroll">
-        {% for p, label, unit, v, t in rows %}
-          <div class="nutri-row">
-            <div class="d-flex justify-content-between" style="font-size:.85rem">
-              <span class="text-secondary">{{ label }}{% if unit %} ({{ unit }}){% endif %}</span>
-              <span>{{ "%.1f"|format(v) }} / {{ "%.0f"|format(t) if t else '—' }}{% if t and t > 0 %} <span class="text-secondary">({{ "%.0f"|format(p if p >= 0 else 0) }}%)</span>{% endif %}</span>
+        {% for p, label, unit, v, t, col in rows %}
+          <div class="nutri-row" data-col="{{ col }}" data-unit="{{ unit }}" data-label="{{ label }}">
+            <div class="nutri-head" role="button" tabindex="0" aria-expanded="false">
+              <div class="d-flex justify-content-between" style="font-size:.85rem">
+                <span class="text-secondary"><i class="bi bi-chevron-right nutri-chev"></i>{{ label }}{% if unit %} ({{ unit }}){% endif %}</span>
+                <span>{{ "%.1f"|format(v) }} / {{ "%.0f"|format(t) if t else '—' }}{% if t and t > 0 %} <span class="text-secondary">({{ "%.0f"|format(p if p >= 0 else 0) }}%)</span>{% endif %}</span>
+              </div>
+              <div class="hx-bar hx-bar-sm"><i style="width:{{ 100 if p > 100 else (p if p >= 0 else 0) }}%{% if p >= 100 %};background:#3fb950{% endif %}"></i></div>
             </div>
-            <div class="progress" style="height:5px">
-              <div class="progress-bar" style="width:{{ 100 if p > 100 else (p if p >= 0 else 0) }}%;background:{{ '#56d364' if p >= 100 else color }}"></div>
-            </div>
+            <div class="nutri-detail" hidden></div>
           </div>
         {% endfor %}
       </div>
@@ -73,76 +72,102 @@
   {% endif %}
 
   {# ── Steps tile ────────────────────────────────────────────────────────── #}
-  <div class="card mb-3">
-    <div class="card-body text-center py-4">
-      <div class="text-secondary text-uppercase mb-2" style="letter-spacing:.1em;font-size:.72rem">
-        <i class="bi bi-person-walking me-1"></i>Steps
+  <div class="card hx-tile mb-3" style="--accent:#388bfd">
+    <div class="card-body">
+      <div class="d-flex justify-content-between align-items-center">
+        <span class="hx-tile-label"><i class="bi bi-person-walking me-1"></i>Steps</span>
+        {% if total_required is not none and now_required is not none %}
+        <div class="form-check form-switch mb-0 d-flex align-items-center gap-2" style="font-size:.75rem">
+          <label class="form-check-label text-secondary" for="stepsModeSwitch" id="stepsModeLabel">From start</label>
+          <input class="form-check-input mt-0" type="checkbox" role="switch" id="stepsModeSwitch"
+                 data-bs-toggle="tooltip" data-bs-placement="left"
+                 data-bs-title="Counting from your starting weight">
+        </div>
+        {% endif %}
       </div>
       {% if total_required is not none %}
-        <div style="font-size:2.1rem;font-weight:800;line-height:1.1;color:#0d6efd">
-          <span class="hx-info" id="recorded"
-                data-info="Total steps you've recorded since your starting date.">{{ '{:,}'.format(total_recorded) }}</span>
-          <span class="text-secondary" style="font-weight:600">/</span>
-          <span class="hx-info" id="required"
-                data-info="Total steps needed to walk from your starting weight down to your goal weight.">{{ '{:,}'.format(total_required) }}</span>
-          <span style="font-size:1.4rem;font-weight:700">(<span class="hx-info" id="percent"
-                data-info="Percentage of the way to your goal weight.">{{ percent_str }}</span>%)</span>
+      <div id="steps-from-start">
+        <div class="hx-basis"><i class="bi bi-flag me-1"></i>From starting weight · {{ starting_weight }} kg{% if starting_date %} on {{ starting_date }}{% endif %}</div>
+        <div class="d-flex justify-content-between align-items-baseline">
+          <div class="hx-big">
+            <span class="hx-info" id="recorded"
+                  data-info="Total steps you've recorded since your starting date.">{{ '{:,}'.format(total_recorded) }}</span>
+            <span class="hx-of">/ <span class="hx-info" id="required"
+                  data-info="Total steps needed to walk from your starting weight down to your goal weight.">{{ '{:,}'.format(total_required) }}</span></span>
+          </div>
+          <span class="hx-pct"><span class="hx-info" id="percent"
+                data-info="Percentage of the way to your goal weight.">{{ percent_str }}</span>%</span>
         </div>
-        <div class="text-secondary mt-2">
-          Steps left: <span id="steps_left" class="fw-bold text-body">{{ '{:,}'.format(steps_left) }}</span>
+        <div class="hx-bar"><i id="steps_bar" style="width:{{ percent or 0 }}%"></i></div>
+        <div class="hx-sub">
+          <span id="steps_left">{{ '{:,}'.format(steps_left) }}</span> steps left ·
+          <span id="thousands_left">{{ '{:,}'.format(thousands_left) }}</span> thousand
         </div>
-        <div class="text-secondary">
-          Thousands left: <span id="thousands_left" class="fw-bold text-body">{{ '{:,}'.format(thousands_left) }}</span>
+      </div>
+      {% if now_required is not none %}
+      <div id="steps-from-today" hidden>
+        <div class="hx-basis"><i class="bi bi-calendar-check me-1"></i>From today's weight · <span id="current_weight">{{ current_weight }}</span> kg → {{ target_weight }} kg goal</div>
+        <div class="d-flex justify-content-between align-items-baseline">
+          <div class="hx-big">
+            <span class="hx-info" id="now_required"
+                  data-info="Steps still needed to walk from today's weight down to your goal weight.">{{ '{:,}'.format(now_required) }}</span>
+            <span class="hx-of">steps to go</span>
+          </div>
+          <span class="hx-pct"><span class="hx-info" id="now_percent"
+                data-info="Share of the weight between your starting and goal weight already lost.">{{ now_percent_str or '0.000' }}</span>%</span>
         </div>
-        <div id="hx-info-box" class="small text-info mt-2" style="min-height:1.2em"></div>
+        <div class="hx-bar"><i id="now_bar" style="width:{{ now_percent_str or 0 }}%"></i></div>
+        <div class="hx-sub">
+          <span id="kg_to_go">{{ kg_to_go }}</span> kg to go ·
+          <span id="now_thousands">{{ '{:,}'.format(now_thousands) }}</span> thousand ·
+          today <span id="today_steps">{{ '{:,}'.format(today_steps) }}</span>
+        </div>
+      </div>
+      {% endif %}
+      <div id="hx-info-box" class="small text-info mt-1" style="min-height:1.2em"></div>
       {% else %}
-        <div class="text-secondary">Set your starting and goal weight to see this.</div>
+        <div class="text-secondary mt-2">Set your starting and goal weight to see this.</div>
       {% endif %}
     </div>
   </div>
 
   {# ── Calories tile ─────────────────────────────────────────────────────── #}
-  <div class="card mb-3">
-    <div class="card-body text-center py-4">
-      <div class="text-secondary text-uppercase mb-2" style="letter-spacing:.1em;font-size:.72rem">
-        <i class="bi bi-fire me-1"></i>Calories
-      </div>
-      <div style="font-size:1.9rem;font-weight:800;line-height:1.1;color:#79c0ff">
-        <span id="today_calories">{{ '{:,}'.format(today_calories) }}</span>
-        <span class="text-secondary" style="font-weight:600">/</span>
-        {% if calorie_target is not none %}
-          <span id="calorie_target">{{ '{:,}'.format(calorie_target) }}</span>
-          {% set over = calorie_diff > 0 %}
-          <span id="calorie_diff" style="font-size:1.25rem;font-weight:700;color:{{ '#f85149' if over else '#56d364' }}">({{ '+' if over else '-' }}{{ '{:,}'.format(calorie_diff|abs) }})</span>
-        {% else %}
-          <span class="text-secondary">—</span>
+  {% set cal_pct = (today_calories / calorie_target * 100) if calorie_target else 0 %}
+  {% set over = calorie_diff is not none and calorie_diff > 0 %}
+  <div class="card hx-tile mb-3" style="--accent:#f78536">
+    <div class="card-body">
+      <div class="d-flex justify-content-between align-items-center">
+        <span class="hx-tile-label"><i class="bi bi-fire me-1"></i>Calories</span>
+        {% if calorie_diff is not none %}
+        <span id="calorie_diff" class="hx-sub mt-0 fw-semibold" style="color:{{ '#f85149' if over else '#3fb950' }}">{{ '{:,}'.format(calorie_diff|abs) }} {{ 'over' if over else 'under' }}</span>
         {% endif %}
       </div>
-      <div class="text-secondary small mt-2">
-        {% if calorie_target is not none %}calories eaten / daily target{% else %}add your profile to compute a target{% endif %}
+      <div class="hx-big mt-1">
+        <span id="today_calories">{{ '{:,}'.format(today_calories) }}</span>
+        <span class="hx-of">/ {% if calorie_target is not none %}<span id="calorie_target">{{ '{:,}'.format(calorie_target) }}</span>{% else %}—{% endif %} kcal</span>
       </div>
+      <div class="hx-bar"><i id="cal_bar" style="width:{{ [cal_pct, 100]|min }}%{% if over %};background:#f85149{% endif %}"></i></div>
+      {% if calorie_target is none %}<div class="hx-sub">Add your profile to compute a target.</div>{% endif %}
     </div>
   </div>
 
   {# ── Hydration tile ────────────────────────────────────────────────────── #}
-  <div class="card mb-3">
-    <div class="card-body text-center py-4">
-      <div class="text-secondary text-uppercase mb-2" style="letter-spacing:.1em;font-size:.72rem">
-        <i class="bi bi-droplet-half me-1"></i>Hydration
-      </div>
-      <div style="font-size:1.9rem;font-weight:800;line-height:1.1;color:#58a6ff">
+  {% set hyd_pct = (hydration_ml / hydration_target * 100) if hydration_target else 0 %}
+  <div class="card hx-tile mb-3" style="--accent:#2ea6a0">
+    <div class="card-body">
+      <span class="hx-tile-label"><i class="bi bi-droplet-half me-1"></i>Hydration</span>
+      <div class="hx-big mt-1">
         <span id="hydration_ml">{{ '{:,}'.format(hydration_ml) }}</span>
-        <span class="text-secondary" style="font-weight:600">/</span>
-        <span id="hydration_target">{{ '{:,}'.format(hydration_target) }}</span>
-        <span class="text-secondary" style="font-size:1.15rem">ml</span>
+        <span class="hx-of">/ <span id="hydration_target">{{ '{:,}'.format(hydration_target) }}</span> ml</span>
       </div>
+      <div class="hx-bar"><i id="hyd_bar" style="width:{{ [hyd_pct, 100]|min }}%"></i></div>
     </div>
   </div>
 
   {# ── Nutrition / Vitamins / Minerals tiles ─────────────────────────────── #}
-  {{ nutri_tile('Nutrition', 'bi-pie-chart', NUTRITION, '#79c0ff') }}
+  {{ nutri_tile('Nutrition', 'bi-pie-chart', NUTRITION, '#3fb950') }}
   {{ nutri_tile('Vitamins',  'bi-capsule',   VITAMINS,   '#a371f7') }}
-  {{ nutri_tile('Minerals',  'bi-gem',       MINERALS,   '#58a6ff') }}
+  {{ nutri_tile('Minerals',  'bi-gem',       MINERALS,   '#d29922') }}
 
 </div>
 {% endblock %}
@@ -150,10 +175,41 @@
 {% block scripts %}
 <style>
   .hx-info { cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
+  /* Accent-bar tiles: coloured left edge, big number, slim progress bar. */
+  .hx-tile { border-left: 4px solid var(--accent) !important; border-radius: 4px 12px 12px 4px; }
+  .hx-tile .card-body { padding: .9rem 1rem; }
+  .hx-tile-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .1em; color: #8b949e; }
+  .hx-big { font-size: 1.75rem; font-weight: 800; line-height: 1.15; }
+  .hx-of { font-size: .95rem; font-weight: 500; color: #8b949e; }
+  .hx-pct { font-size: 1rem; font-weight: 700; color: var(--accent); white-space: nowrap; }
+  .hx-bar { height: 8px; border-radius: 99px; background: var(--hx-chip); overflow: hidden; margin-top: .45rem; }
+  .hx-bar > i { display: block; height: 100%; border-radius: 99px; background: var(--accent); transition: width .4s; }
+  .hx-bar-sm { height: 5px; margin-top: .2rem; }
+  .hx-sub { font-size: .8rem; color: #8b949e; margin-top: .35rem; }
+  .hx-basis { font-size: .75rem; color: #8b949e; margin: .25rem 0 .35rem; }
   /* ~3 rows visible, then scroll. Fixed px (not vh) to avoid WebView collapse. */
-  .nutri-scroll { max-height: 100px; overflow-y: auto; }
+  .nutri-scroll { max-height: 112px; overflow-y: auto; }
   .nutri-row { margin-bottom: .55rem; }
   .nutri-row:last-child { margin-bottom: 0; }
+  /* Expanding a row lifts the 3-row scroll cap so the detail can be read. */
+  .nutri-scroll.has-open { max-height: none; }
+  .nutri-head { cursor: pointer; user-select: none; }
+  .nutri-chev { font-size: .7rem; margin-right: .3rem; display: inline-block; transition: transform .15s; }
+  .nutri-row.open .nutri-chev { transform: rotate(90deg); }
+  .nutri-detail {
+    margin: .5rem 0 .25rem; padding: .6rem .7rem;
+    background: var(--hx-panel2); border: 1px solid var(--hx-border); border-radius: 8px;
+    font-size: .8rem;
+  }
+  .nutri-detail h6 { font-size: .68rem; text-transform: uppercase; letter-spacing: .08em; color: #8b949e; margin: .6rem 0 .35rem; }
+  .sug-item { display: flex; align-items: center; gap: .5rem; padding: .3rem 0; color: inherit; text-decoration: none; }
+  .sug-item + .sug-item { border-top: 1px solid var(--hx-border); }
+  .sug-item img, .sug-item .sug-noimg { width: 34px; height: 34px; object-fit: contain; border-radius: 6px; background: var(--hx-bg); flex-shrink: 0; }
+  .sug-item .sug-noimg { display: flex; align-items: center; justify-content: center; color: #8b949e; }
+  .sug-main { flex: 1; min-width: 0; }
+  .sug-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sug-bar { height: 3px; border-radius: 2px; background: #56d364; margin-top: 3px; }
+  .sug-val { text-align: right; white-space: nowrap; }
 </style>
 <script>
 (function () {
@@ -168,6 +224,125 @@
   });
 
   function setText(id, v) { var el = document.getElementById(id); if (el) el.textContent = v; }
+  function setBar(id, pct) {
+    var el = document.getElementById(id);
+    if (el) el.style.width = Math.max(0, Math.min(100, Number(pct) || 0)) + '%';
+    return el;
+  }
+
+  // Steps tile: "From start" (whole journey) vs "From today" (current weight).
+  var sw = document.getElementById('stepsModeSwitch');
+  if (sw) {
+    var KEY = 'hx-steps-mode';
+    var tip = window.bootstrap ? bootstrap.Tooltip.getOrCreateInstance(sw) : null;
+    function applyMode() {
+      var today = sw.checked;
+      document.getElementById('steps-from-start').hidden = today;
+      document.getElementById('steps-from-today').hidden = !today;
+      setText('stepsModeLabel', today ? 'From today' : 'From start');
+      setText('hx-info-box', '');
+      var msg = today ? "Counting from today's weight" : 'Counting from your starting weight';
+      if (tip) tip.setContent({ '.tooltip-inner': msg });
+    }
+    try { sw.checked = localStorage.getItem(KEY) === 'today'; } catch (e) {}
+    applyMode();
+    sw.addEventListener('change', function () {
+      try { localStorage.setItem(KEY, sw.checked ? 'today' : 'start'); } catch (e) {}
+      applyMode();
+      // Flash the tooltip briefly so the change of basis is obvious on touch.
+      if (tip) { tip.show(); setTimeout(function () { tip.hide(); }, 1800); }
+    });
+  }
+
+  // ── Nutrient rows: expand to show foods that cover the target ──────────────
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function num(v) {
+    if (v === null || v === undefined) return '—';
+    var a = Math.abs(v);
+    return a >= 100 ? Math.round(v).toLocaleString() : a >= 10 ? v.toFixed(1) : v.toFixed(2);
+  }
+
+  function renderList(items, kind, unit, mode) {
+    if (!items.length) return '<div class="text-secondary py-1">Nothing in your ' + kind + ' has this yet.</div>';
+    var key = mode === 'density' ? 'per_100kcal' : 'value';
+    var top = items[0][key] || 1;
+    return items.map(function (x) {
+      var href = kind === 'recipes' ? '/meals/' + x.id + '/edit' : '/ingredients/' + x.id + '/edit';
+      var img = x.image
+        ? '<img src="/static/ingredient_images/' + encodeURIComponent(x.image) + '" alt="">'
+        : '<div class="sug-noimg"><i class="bi ' + (kind === 'recipes' ? 'bi-journal-text' : 'bi-basket') + '"></i></div>';
+      var sub = esc(x.portion) + ' · ' + x.calories + ' kcal';
+      if (mode === 'density' && x.per_100kcal !== null) sub += ' · ' + num(x.per_100kcal) + ' ' + unit + ' / 100 kcal';
+      var right = '<div class="fw-semibold">' + num(x.value) + (unit ? ' ' + unit : '') + '</div>';
+      if (x.pct_remaining !== null) right += '<div class="text-secondary" style="font-size:.7rem">' + Math.round(x.pct_remaining) + '% of what\'s left</div>';
+      else if (x.pct_target !== null) right += '<div class="text-secondary" style="font-size:.7rem">' + Math.round(x.pct_target) + '% of target</div>';
+      return '<a class="sug-item" href="' + href + '">' + img +
+        '<div class="sug-main"><div class="sug-name">' + esc(x.name) + '</div>' +
+        '<div class="text-secondary" style="font-size:.7rem">' + sub + '</div>' +
+        '<div class="sug-bar" style="width:' + Math.max(4, Math.round((x[key] || 0) / top * 100)) + '%"></div></div>' +
+        '<div class="sug-val">' + right + '</div></a>';
+    }).join('');
+  }
+
+  async function loadDetail(row, mode) {
+    var box = row.querySelector('.nutri-detail');
+    var unit = row.dataset.unit || '';
+    box.innerHTML = '<div class="text-secondary"><span class="spinner-border spinner-border-sm me-1"></span>Finding foods…</div>';
+    try {
+      var r = await fetch('/api/nutrient_suggestions/' + row.dataset.col + '?mode=' + mode, { cache: 'no-store' });
+      var d = await r.json();
+      var html = '';
+      if (d.is_limit) {
+        html = '<div><i class="bi bi-shield-exclamation me-1 text-warning"></i>' + esc(row.dataset.label) +
+          ' is a daily <strong>limit</strong>, not a goal — aim to stay under it.' +
+          (d.remaining !== null ? ' You have <strong>' + num(d.remaining) + ' ' + unit + '</strong> left today.' : '') + '</div>';
+        box.innerHTML = html;
+        return;
+      }
+      if (d.remaining === null) html += '<div class="text-secondary">No daily target set — showing the richest sources.</div>';
+      else if (d.remaining <= 0) html += '<div><i class="bi bi-check-circle-fill text-success me-1"></i>Target reached today. Best sources:</div>';
+      else html += '<div><strong>' + num(d.remaining) + ' ' + unit + '</strong> left to reach today\'s target. Best sources:</div>';
+      if (d.col !== 'calories') {
+        html += '<div class="btn-group btn-group-sm mt-2" role="group">' +
+          '<button type="button" class="btn btn-outline-secondary py-0' + (mode === 'serving' ? ' active' : '') + '" data-mode="serving">Per serving</button>' +
+          '<button type="button" class="btn btn-outline-secondary py-0' + (mode === 'density' ? ' active' : '') + '" data-mode="density">Per 100 kcal</button>' +
+          '</div>';
+      }
+      html += '<h6>Recipes</h6>' + renderList(d.recipes, 'recipes', unit, mode);
+      html += '<h6>Ingredients</h6>' + renderList(d.ingredients, 'ingredients', unit, mode);
+      box.innerHTML = html;
+      box.querySelectorAll('[data-mode]').forEach(function (b) {
+        b.addEventListener('click', function (e) {
+          e.stopPropagation();
+          loadDetail(row, b.dataset.mode);
+        });
+      });
+    } catch (e) {
+      box.innerHTML = '<div class="text-danger">Couldn\'t load suggestions.</div>';
+    }
+  }
+
+  document.querySelectorAll('.nutri-row').forEach(function (row) {
+    var head = row.querySelector('.nutri-head');
+    var box = row.querySelector('.nutri-detail');
+    function toggle() {
+      var open = !row.classList.contains('open');
+      row.classList.toggle('open', open);
+      head.setAttribute('aria-expanded', open ? 'true' : 'false');
+      box.hidden = !open;
+      if (open && !box.dataset.loaded) { box.dataset.loaded = '1'; loadDetail(row, 'serving'); }
+      var scroll = row.closest('.nutri-scroll');
+      scroll.classList.toggle('has-open', !!scroll.querySelector('.nutri-row.open'));
+    }
+    head.addEventListener('click', toggle);
+    head.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+    });
+  });
 
   async function poll() {
     try {
@@ -178,21 +353,36 @@
         setText('recorded', fmt(d.total_recorded));
         setText('required', fmt(d.total_required));
         setText('percent', d.percent_str);
+        setBar('steps_bar', d.percent);
         setText('steps_left', fmt(d.steps_left));
         if (d.thousands_left !== null && d.thousands_left !== undefined) {
           setText('thousands_left', fmt(d.thousands_left));
         }
       }
+      if (d.now_required !== null && d.now_required !== undefined) {
+        setText('now_required', fmt(d.now_required));
+        setText('now_thousands', fmt(d.now_thousands));
+        if (d.now_percent_str) {
+          setText('now_percent', d.now_percent_str);
+          setBar('now_bar', parseFloat(d.now_percent_str));
+        }
+        if (d.current_weight !== null) setText('current_weight', d.current_weight);
+        if (d.kg_to_go !== null) setText('kg_to_go', d.kg_to_go);
+      }
+      setText('today_steps', fmt(d.today_steps));
       setText('today_calories', fmt(d.today_calories));
       setText('hydration_ml', fmt(d.hydration_ml));
+      if (d.hydration_target) setBar('hyd_bar', d.hydration_ml / d.hydration_target * 100);
       if (d.calorie_target !== null && d.calorie_target !== undefined) {
         setText('calorie_target', fmt(d.calorie_target));
+        const over = d.calorie_diff > 0;
         const diffEl = document.getElementById('calorie_diff');
         if (diffEl && d.calorie_diff !== null && d.calorie_diff !== undefined) {
-          const over = d.calorie_diff > 0;
-          diffEl.textContent = '(' + (over ? '+' : '-') + fmt(Math.abs(d.calorie_diff)) + ')';
-          diffEl.style.color = over ? '#f85149' : '#56d364';
+          diffEl.textContent = fmt(Math.abs(d.calorie_diff)) + (over ? ' over' : ' under');
+          diffEl.style.color = over ? '#f85149' : '#3fb950';
         }
+        const calBar = setBar('cal_bar', d.calorie_target ? d.today_calories / d.calorie_target * 100 : 0);
+        if (calBar) calBar.style.background = over ? '#f85149' : '';
       }
     } catch (e) { /* ignore, retry next tick */ }
   }

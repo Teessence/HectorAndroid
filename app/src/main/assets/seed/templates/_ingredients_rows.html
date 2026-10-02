@@ -17,10 +17,10 @@
   <td class="fw-semibold ing-name-cell" style="min-width:160px;max-width:220px">
     <div class="d-flex align-items-center gap-2">
       {% if i.image_filename %}
-      <img src="/static/ingredient_images/{{ i.image_filename }}"
+      <img class="ing-thumb" src="/static/ingredient_images/{{ i.image_filename }}"
            style="width:72px;height:72px;object-fit:contain;border-radius:8px;border:1px solid var(--hx-border);background:var(--hx-bg);padding:3px;flex-shrink:0">
       {% else %}
-      <div style="width:72px;height:72px;border-radius:8px;border:1px solid var(--hx-border);background:var(--hx-panel2);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+      <div class="ing-thumb" style="width:72px;height:72px;border-radius:8px;border:1px solid var(--hx-border);background:var(--hx-panel2);display:flex;align-items:center;justify-content:center;flex-shrink:0">
         <i class="bi bi-image text-secondary" style="font-size:1.5rem"></i>
       </div>
       {% endif %}

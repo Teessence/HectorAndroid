@@ -30,6 +30,23 @@
     z-index: 2;
     background: var(--hx-panel);  /* matches card bg so content doesn't bleed through */
   }
+  /* Freeze the Name column while scrolling sideways. Opaque background so the
+     other columns slide underneath it; a soft edge shadow marks the split. */
+  .ing-table th:first-child,
+  .ing-table td:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background: var(--hx-panel);
+    box-shadow: 6px 0 6px -6px rgba(0, 0, 0, .5);
+  }
+  .ing-table thead th:first-child { z-index: 3; }
+  .ing-table tbody tr:hover td:first-child { background: var(--hx-panel2); }
+  /* On phones keep the frozen column narrow so data stays visible. */
+  @media (max-width: 575.98px) {
+    .ing-table td.ing-name-cell { min-width: 120px !important; max-width: 150px !important; }
+    .ing-table .ing-thumb { width: 40px !important; height: 40px !important; }
+  }
   /* Tiny "loading more…" footer that appears mid-fetch. */
   #ing-loadmore-row td {
     text-align: center;

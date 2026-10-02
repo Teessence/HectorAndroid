@@ -1,7 +1,7 @@
 import os
 import uuid
 from datetime import datetime, date, timedelta
-from flask import (Flask, render_template, request, redirect, url_for, flash, jsonify)
+from flask import (Flask, render_template, request, redirect, url_for, flash, jsonify, Response)
 from werkzeug.utils import secure_filename
 from database import (
     get_db, get_setting, set_setting, is_setup_complete,
@@ -16,7 +16,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # desktop falls back to the folders next to this module.
 IMAGES_DIR = os.environ.get('HECTOR_IMAGES_DIR') or os.path.join(BASE_DIR, 'static', 'ingredient_images')
 ALLOWED_EXTENSIONS = {'jpg', 'jpeg', 'png', 'gif', 'webp'}
-EXEMPT_ENDPOINTS = {'setup', 'static'}
+EXEMPT_ENDPOINTS = {'setup', 'static', 'backup_import'}
 
 TARGET_KEYS = [
     # macros
@@ -199,6 +199,14 @@ def create_app():
         import home_calc
         return jsonify(home_calc.compute_home_status())
 
+    @app.route('/api/nutrient_suggestions/<col>')
+    def api_nutrient_suggestions(col):
+        import suggest
+        if col not in NUTRIENT_FIELDS:
+            return jsonify({'error': 'unknown nutrient'}), 404
+        mode = 'density' if request.args.get('mode') == 'density' else 'serving'
+        return jsonify(suggest.nutrient_suggestions(col, get_targets(), mode))
+
     @app.route('/dashboard')
     @app.route('/dashboard/<date_str>')
     def dashboard(date_str=None):
@@ -279,6 +287,7 @@ def create_app():
                                auto_calories=compute_calorie_target(),
                                calorie_deficit=get_calorie_deficit(),
                                garmin_status=garmin.get_status(),
+                               last_backup_at=get_setting('last_backup_at'),
                                active_page='settings')
 
     @app.route('/settings/display', methods=['POST'])
@@ -310,6 +319,38 @@ def create_app():
         conn.close()
         flash('Calibrated — diary and steps wiped. Starting fresh from your settings.', 'success')
         return redirect(url_for('settings'))
+
+    # ── Backup ────────────────────────────────────────────────────────────────
+
+    @app.route('/backup/export')
+    def backup_export():
+        import backup
+        data, filename = backup.export_zip(IMAGES_DIR)
+        set_setting('last_backup_at', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+        return Response(data, mimetype='application/zip', headers={
+            'Content-Disposition': f'attachment; filename="{filename}"',
+            'Content-Length': str(len(data)),
+        })
+
+    @app.route('/backup/import', methods=['POST'])
+    def backup_import():
+        import backup
+        f = request.files.get('backup_file')
+        if not f or not f.filename:
+            flash('Choose a backup file first.', 'warning')
+            return redirect(url_for('settings', tab='backup'))
+        try:
+            c = backup.import_zip(f, IMAGES_DIR)
+        except backup.BackupError as e:
+            flash(f'Import failed: {e}', 'danger')
+            return redirect(url_for('settings', tab='backup'))
+        except Exception as e:
+            flash(f'Import failed: {e}', 'danger')
+            return redirect(url_for('settings', tab='backup'))
+        flash(f"Backup restored — {c['ingredients']} ingredients, {c['recipes']} recipes, "
+              f"{c['diary']} diary entries, {c['days']} tracked days, {c['images']} photos.",
+              'success')
+        return redirect(url_for('index'))
 
     # ── Ingredients ───────────────────────────────────────────────────────────
 

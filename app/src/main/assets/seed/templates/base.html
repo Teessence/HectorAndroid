@@ -99,6 +99,28 @@
       border: 0; padding: 0; margin: 0; background: transparent;
     }
 
+    /* Hamburger menu (collapsed navbar): one row per item with a divider, and
+       the current page tinted + marked with an accent bar. */
+    @media (max-width: 991.98px) {
+      .navbar-collapse .navbar-nav { margin-top: .5rem; }
+      .navbar-collapse .nav-item { border-bottom: 1px solid var(--hx-border); }
+      .navbar-collapse .navbar-nav:last-child .nav-item:last-child { border-bottom: 0; }
+      .navbar-collapse .nav-link {
+        padding: .7rem .75rem;
+        border-left: 3px solid transparent;
+      }
+      .navbar-collapse .nav-link i { width: 1.4rem; display: inline-block; }
+      .navbar-collapse .nav-link.active {
+        background: rgba(88, 166, 255, .12);
+        border-left-color: #58a6ff;
+        font-weight: 600;
+      }
+      [data-bs-theme="light"] .navbar-collapse .nav-link.active {
+        background: rgba(9, 105, 218, .08);
+        border-left-color: #0969da;
+      }
+    }
+
     /* Mobile fix: the list pages wrap their tables in a scroll box with a fixed
        `max-height: calc(100vh - Npx)`. In the Android WebView `vh` can resolve
        so small that this collapses to zero, hiding the entire table. On small
