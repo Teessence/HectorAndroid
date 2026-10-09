@@ -14,7 +14,10 @@ import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
+import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
@@ -36,6 +39,7 @@ class StepService : Service(), SensorEventListener {
     private var sensorManager: SensorManager? = null
     private var stepSensor: Sensor? = null
     private val dbExecutor = Executors.newSingleThreadExecutor()
+    private val handler = Handler(Looper.getMainLooper())
 
     private var lastPushMs = 0L
     private var lastPushedSteps = -1L
@@ -51,6 +55,8 @@ class StepService : Service(), SensorEventListener {
         stepSensor?.let { sensor ->
             sensorManager?.registerListener(this, sensor, SensorManager.SENSOR_DELAY_NORMAL)
         }
+        // Close out a walk left open if the service was restarted mid-walk.
+        handler.post(walkCheck)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -75,6 +81,8 @@ class StepService : Service(), SensorEventListener {
             if (delta > 0L) dayAccum += delta
         }
 
+        val walkDelta = if (lastRaw < 0L) 0L else if (raw >= lastRaw) raw - lastRaw else raw
+
         prefs.edit()
             .putString(KEY_DAY, today)
             .putLong(KEY_ACCUM, dayAccum)
@@ -83,12 +91,85 @@ class StepService : Service(), SensorEventListener {
 
         updateNotification(dayAccum)
         pushToDb(today, dayAccum)
+        if (walkDelta > 0L) trackWalk(eventWallTime(event), walkDelta)
+    }
+
+    // ---- Walk detection ----------------------------------------------------
+    // A walk is a run of steps with no pause longer than WALK_GAP_MS. Once it
+    // ends, it's logged if it lasted at least WALK_MIN_MS with a real walking
+    // pace. This sits on top of the daily count and never changes it.
+
+    /** Sensor timestamps are nanos since boot; convert to wall-clock millis so
+     *  batched (delayed) events still land at the time the steps happened. */
+    private fun eventWallTime(event: SensorEvent): Long {
+        val now = System.currentTimeMillis()
+        val ageMs = (SystemClock.elapsedRealtimeNanos() - event.timestamp) / 1_000_000L
+        return if (ageMs in 0L..WALK_GAP_MS * 30) now - ageMs else now
+    }
+
+    private fun trackWalk(at: Long, steps: Long) {
+        val start = prefs.getLong(KEY_WALK_START, 0L)
+        val last = prefs.getLong(KEY_WALK_LAST, 0L)
+        if (start == 0L || at - last > WALK_GAP_MS) {
+            finishWalk()
+            prefs.edit()
+                .putLong(KEY_WALK_START, at)
+                .putLong(KEY_WALK_LAST, at)
+                .putLong(KEY_WALK_STEPS, steps)
+                .apply()
+        } else {
+            prefs.edit()
+                .putLong(KEY_WALK_LAST, maxOf(last, at))
+                .putLong(KEY_WALK_STEPS, prefs.getLong(KEY_WALK_STEPS, 0L) + steps)
+                .apply()
+        }
+        scheduleWalkCheck()
+    }
+
+    /** Close the current walk (if any) and log it when it qualifies. */
+    private fun finishWalk() {
+        val start = prefs.getLong(KEY_WALK_START, 0L)
+        if (start == 0L) return
+        val end = prefs.getLong(KEY_WALK_LAST, start)
+        val steps = prefs.getLong(KEY_WALK_STEPS, 0L)
+        prefs.edit().remove(KEY_WALK_START).remove(KEY_WALK_LAST).remove(KEY_WALK_STEPS).apply()
+        val minutes = (end - start) / 60_000.0
+        if (end - start >= WALK_MIN_MS && steps / minutes >= WALK_MIN_PACE) {
+            logWalk(start, end, steps)
+        }
+    }
+
+    private val walkCheck = Runnable {
+        val last = prefs.getLong(KEY_WALK_LAST, 0L)
+        if (last != 0L && System.currentTimeMillis() - last > WALK_GAP_MS) finishWalk()
+        else if (last != 0L) scheduleWalkCheck()
+    }
+
+    private fun scheduleWalkCheck() {
+        handler.removeCallbacks(walkCheck)
+        handler.postDelayed(walkCheck, WALK_GAP_MS + 5_000L)
+    }
+
+    private fun logWalk(start: Long, end: Long, steps: Long) {
+        val fmt = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US)
+        val s = fmt.format(java.util.Date(start))
+        val e = fmt.format(java.util.Date(end))
+        dbExecutor.execute {
+            try {
+                if (Python.isStarted()) {
+                    Python.getInstance().getModule("mobile_steps").callAttr("log_walk", s, e, steps)
+                }
+            } catch (ex: Exception) {
+                // A lost walk entry is not worth crashing the counter over.
+            }
+        }
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
 
     override fun onDestroy() {
         sensorManager?.unregisterListener(this)
+        handler.removeCallbacks(walkCheck)
         dbExecutor.shutdown()
         super.onDestroy()
     }
@@ -172,6 +253,12 @@ class StepService : Service(), SensorEventListener {
         private const val KEY_DAY = "day"
         private const val KEY_ACCUM = "day_accum"
         private const val KEY_LAST_RAW = "last_raw"
+        private const val KEY_WALK_START = "walk_start"
+        private const val KEY_WALK_LAST = "walk_last"
+        private const val KEY_WALK_STEPS = "walk_steps"
+        private const val WALK_GAP_MS = 2 * 60_000L      // a pause longer than this ends a walk
+        private const val WALK_MIN_MS = 5 * 60_000L      // shortest walk worth logging
+        private const val WALK_MIN_PACE = 40.0           // steps/min; filters pottering about
 
         fun start(context: Context) {
             ContextCompat.startForegroundService(

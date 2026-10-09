@@ -42,6 +42,9 @@ def export_zip(images_dir):
         dst = sqlite3.connect(snap_path)
         try:
             src.backup(dst)
+            # Backups get copied to cloud drives and emailed — never ship secrets.
+            dst.execute("DELETE FROM settings WHERE key IN ('anthropic_api_key', 'garmin_password')")
+            dst.commit()
         finally:
             dst.close()
             src.close()
@@ -114,6 +117,9 @@ def import_zip(file_obj, images_dir):
 
         try:
             _check_db(snap_path)
+            # Secrets are never exported, so carry this phone's over the restore.
+            kept_secrets = {k: database.get_setting(k) for k in ('anthropic_api_key',)
+                            if database.get_setting(k)}
 
             # Keep the current database so a bad import can be undone by hand.
             live = database.DB_PATH
@@ -154,6 +160,8 @@ def import_zip(file_obj, images_dir):
 
         # Bring an older backup's schema up to date.
         database.init_db()
+        for k, v in kept_secrets.items():
+            database.set_setting(k, v)
 
         conn = database.get_db()
         try:

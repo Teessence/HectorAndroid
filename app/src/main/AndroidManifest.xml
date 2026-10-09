@@ -21,8 +21,11 @@
         android:usesCleartextTraffic="true"
         android:theme="@style/Theme.Hector">
 
+        <!-- Handle rotation/resizing ourselves: otherwise Android recreates the
+             activity, which reloads the WebView at Home and loses the page. -->
         <activity
             android:name=".MainActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

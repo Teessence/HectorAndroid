@@ -1,11 +1,14 @@
 {# Renders <tr> rows for the ingredients table. Used both inline (initial page
-   render) and as the AJAX response body for infinite scroll. Caller must
-   provide: ingredients (iterable), targets (dict). #}
+   render) and as the AJAX response body for infinite scroll / live search.
+   Caller must provide: ingredients (iterable), targets (dict).
+   Each cell carries its column group (g-info / g-macro / g-vit / g-min) so the
+   page can show one group at a time, and a data-label used as the caption
+   when rows turn into cards on phones. #}
 
 {% macro val_pct(value, target, fmt='%.1f') %}
   {%- if value -%}
     {{ fmt|format(value) }}{%- if target and target > 0 -%}
-      <span class="text-secondary" style="font-size:.7rem">&nbsp;({{ "%.1f"|format(value / target * 100) }}%)</span>
+      <span class="text-secondary ing-pct" style="font-size:.7rem">&nbsp;({{ "%.1f"|format(value / target * 100) }}%)</span>
     {%- endif -%}
   {%- else -%}—{%- endif -%}
 {% endmacro %}
@@ -24,47 +27,52 @@
         <i class="bi bi-image text-secondary" style="font-size:1.5rem"></i>
       </div>
       {% endif %}
-      <span class="ing-name-text" title="{{ i.name }}">{{ i.name }}</span>
+      <div style="min-width:0">
+        <span class="ing-name-text" title="{{ i.name }}">{{ i.name }}</span>
+        <span class="ing-card-meta text-secondary fw-normal">
+          per {{ '%g'|format(i.serving_size) }} {{ i.unit }}{% if i.company %} · {{ i.company }}{% endif %}{% if i.shop %} · {{ i.shop }}{% endif %}
+        </span>
+      </div>
     </div>
   </td>
-  <td><span class="badge bg-secondary">{{ i.unit }}</span></td>
-  <td class="text-secondary" style="white-space:nowrap">{{ i.shop or '—' }}</td>
-  <td class="text-secondary" style="white-space:nowrap">{{ i.company or '—' }}</td>
-  <td class="text-center text-secondary" style="white-space:nowrap;font-size:.78rem"
+  <td class="g-info" data-label="Unit"><span class="badge bg-secondary">{{ i.unit }}</span></td>
+  <td class="g-info text-secondary" data-label="Shop" style="white-space:nowrap">{{ i.shop or '—' }}</td>
+  <td class="g-info text-secondary" data-label="Brand" style="white-space:nowrap">{{ i.company or '—' }}</td>
+  <td class="g-info text-center text-secondary" data-label="Last eaten" style="white-space:nowrap;font-size:.78rem"
       title="{{ i.last_eaten }}">{{ i.last_eaten | relative_time or '—' }}</td>
-  <td class="text-center text-secondary" style="white-space:nowrap">{{ i.serving_size }} {{ i.unit }}</td>
-  <td class="text-center text-secondary" style="white-space:nowrap">{{ i.package_size }} {{ i.unit }}</td>
-  <td class="text-center" style="white-space:nowrap">
+  <td class="g-info text-center text-secondary" data-label="Serving" style="white-space:nowrap">{{ i.serving_size }} {{ i.unit }}</td>
+  <td class="g-info text-center text-secondary" data-label="Package" style="white-space:nowrap">{{ i.package_size }} {{ i.unit }}</td>
+  <td class="g-info text-center" data-label="Cost" style="white-space:nowrap">
     <span style="color:#bc8cff">€{{ "%.2f"|format(i.package_cost) }}</span>
     <br><span class="text-secondary" style="font-size:.72rem">€{{ "%.4f"|format(cpu) }}/{{ i.unit }}</span>
     <br><span class="text-secondary" style="font-size:.72rem">€{{ "%.3f"|format(cps) }}/serving</span>
   </td>
   {# Nutrition #}
-  <td class="text-center" style="color:#79c0ff;white-space:nowrap">{{ val_pct(i.calories, targets.calories, '%.0f') }}</td>
-  <td class="text-center" style="color:#56d364;white-space:nowrap">{{ val_pct(i.protein, targets.protein, '%.1f') }}</td>
-  <td class="text-center" style="color:#56d364">
+  <td class="g-macro text-center" data-label="Calories" style="color:#79c0ff;white-space:nowrap">{{ val_pct(i.calories, targets.calories, '%.0f') }}</td>
+  <td class="g-macro text-center" data-label="Protein" style="color:#56d364;white-space:nowrap">{{ val_pct(i.protein, targets.protein, '%.1f') }}</td>
+  <td class="g-macro text-center" data-label="Protein/kcal" style="color:#56d364">
     {% if i.calories and i.calories > 0 %}{{ "%.3f"|format(i.protein / i.calories) }}{% else %}—{% endif %}
   </td>
-  <td class="text-center" style="color:#ffa657;white-space:nowrap">{{ val_pct(i.fat, targets.fat, '%.1f') }}</td>
-  <td class="text-center" style="color:#ff7b72;font-size:.78rem;white-space:nowrap">{{ val_pct(i.saturates, targets.saturates, '%.1f') }}</td>
-  <td class="text-center" style="color:#e3b341;white-space:nowrap">{{ val_pct(i.carbs, targets.carbs, '%.1f') }}</td>
-  <td class="text-center text-secondary" style="white-space:nowrap">{{ val_pct(i.fiber, targets.fiber, '%.1f') }}</td>
-  <td class="text-center text-secondary" style="white-space:nowrap">{{ val_pct(i.sugar, targets.sugar, '%.1f') }}</td>
-  <td class="text-center text-secondary" style="white-space:nowrap">{{ val_pct(i.salt, targets.salt, '%.2f') }}</td>
+  <td class="g-macro text-center" data-label="Fat" style="color:#ffa657;white-space:nowrap">{{ val_pct(i.fat, targets.fat, '%.1f') }}</td>
+  <td class="g-macro text-center" data-label="Saturates" style="color:#ff7b72;font-size:.78rem;white-space:nowrap">{{ val_pct(i.saturates, targets.saturates, '%.1f') }}</td>
+  <td class="g-macro text-center" data-label="Carbs" style="color:#e3b341;white-space:nowrap">{{ val_pct(i.carbs, targets.carbs, '%.1f') }}</td>
+  <td class="g-macro text-center text-secondary" data-label="Fiber" style="white-space:nowrap">{{ val_pct(i.fiber, targets.fiber, '%.1f') }}</td>
+  <td class="g-macro text-center text-secondary" data-label="Sugar" style="white-space:nowrap">{{ val_pct(i.sugar, targets.sugar, '%.1f') }}</td>
+  <td class="g-macro text-center text-secondary" data-label="Salt" style="white-space:nowrap">{{ val_pct(i.salt, targets.salt, '%.2f') }}</td>
   {# Vitamins #}
-  {% for col, v in [('vit_a',i.vit_a),('vit_c',i.vit_c),('vit_d',i.vit_d),('vit_e',i.vit_e),('vit_k',i.vit_k),
-                    ('vit_b1',i.vit_b1),('vit_b2',i.vit_b2),('vit_b3',i.vit_b3),('vit_b6',i.vit_b6),
-                    ('vit_b9',i.vit_b9),('vit_b12',i.vit_b12)] %}
-  <td class="text-center" style="color:#bc8cff;white-space:nowrap">{{ val_pct(v, targets[col], '%.2f') }}</td>
+  {% for col, label, v in [('vit_a','Vit A',i.vit_a),('vit_c','Vit C',i.vit_c),('vit_d','Vit D',i.vit_d),('vit_e','Vit E',i.vit_e),('vit_k','Vit K',i.vit_k),
+                    ('vit_b1','B1',i.vit_b1),('vit_b2','B2',i.vit_b2),('vit_b3','B3',i.vit_b3),('vit_b6','B6',i.vit_b6),
+                    ('vit_b9','B9',i.vit_b9),('vit_b12','B12',i.vit_b12)] %}
+  <td class="g-vit text-center" data-label="{{ label }}" style="color:#bc8cff;white-space:nowrap">{{ val_pct(v, targets[col], '%.2f') }}</td>
   {% endfor %}
   {# Minerals #}
-  {% for col, m in [('calcium',i.calcium),('iron',i.iron),('magnesium',i.magnesium),('phosphorus',i.phosphorus),
-                    ('potassium',i.potassium),('zinc',i.zinc),('selenium',i.selenium),('iodine',i.iodine),
-                    ('copper',i.copper),('manganese',i.manganese)] %}
-  <td class="text-center" style="color:#ffa657;white-space:nowrap">{{ val_pct(m, targets[col], '%.2f') }}</td>
+  {% for col, label, m in [('calcium','Calcium',i.calcium),('iron','Iron',i.iron),('magnesium','Magnesium',i.magnesium),('phosphorus','Phosphorus',i.phosphorus),
+                    ('potassium','Potassium',i.potassium),('zinc','Zinc',i.zinc),('selenium','Selenium',i.selenium),('iodine','Iodine',i.iodine),
+                    ('copper','Copper',i.copper),('manganese','Manganese',i.manganese)] %}
+  <td class="g-min text-center" data-label="{{ label }}" style="color:#ffa657;white-space:nowrap">{{ val_pct(m, targets[col], '%.2f') }}</td>
   {% endfor %}
   {# Actions — stop propagation so row click doesn't fire #}
-  <td class="text-center" onclick="event.stopPropagation()">
+  <td class="text-center ing-actions" onclick="event.stopPropagation()">
     <form method="post" action="/ingredients/{{ i.id }}/delete"
           onsubmit="event.stopPropagation(); return confirm('Delete {{ i.name }}?')">
       <button class="btn btn-sm btn-outline-danger py-0 px-2">

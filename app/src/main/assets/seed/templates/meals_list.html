@@ -37,13 +37,11 @@
   </a>
 </div>
 
-<form class="mb-3 d-flex gap-2" method="get">
+<form class="mb-3 d-flex gap-2" method="get" role="search">
   <input type="hidden" name="sort" value="{{ sort_col }}">
   <input type="hidden" name="dir"  value="{{ sort_dir }}">
   <input type="search" name="q" class="form-control form-control-sm" style="max-width:320px"
          placeholder="Search by recipe name or ingredient…" value="{{ q }}">
-  <button class="btn btn-outline-secondary btn-sm" type="submit"><i class="bi bi-search"></i></button>
-  {% if q %}<a href="/meals" class="btn btn-outline-danger btn-sm"><i class="bi bi-x"></i></a>{% endif %}
 </form>
 
 {% macro th(col, label, title='', align='') %}
@@ -157,19 +155,33 @@ async function loadMore() {
   }
 }
 
-if (scrollContainer && hasMore) {
+const fillToViewport = () => {
+  if (!hasMore || loading || !scrollContainer) return;
+  if (scrollContainer.scrollHeight <= scrollContainer.clientHeight + 4) {
+    loadMore().then(fillToViewport);
+  }
+};
+if (scrollContainer) {
   scrollContainer.addEventListener('scroll', () => {
     const nearBottom = scrollContainer.scrollTop + scrollContainer.clientHeight
                        >= scrollContainer.scrollHeight - 200;
     if (nearBottom) loadMore();
   });
-  const fillToViewport = () => {
-    if (!hasMore || loading) return;
-    if (scrollContainer.scrollHeight <= scrollContainer.clientHeight + 4) {
-      loadMore().then(fillToViewport);
-    }
-  };
   fillToViewport();
 }
+
+// Results update as you type.
+hxLiveSearch({
+  input: document.querySelector('form[role="search"] input[name="q"]'),
+  endpoint: '/meals',
+  tbody: tbody,
+  onResults: d => {
+    hasMore = !!d.has_more;
+    nextPage = 2;
+    bindRowClicks(tbody);
+    if (scrollContainer) scrollContainer.scrollTop = 0;
+    fillToViewport();
+  },
+});
 </script>
 {% endblock %}

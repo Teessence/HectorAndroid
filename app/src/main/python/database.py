@@ -246,6 +246,32 @@ def init_db():
     if 'source' not in steps_cols:
         conn.execute("ALTER TABLE daily_steps ADD COLUMN source TEXT")
         conn.commit()
+
+    # Diary entries store "servings" as a multiple of the ingredient's serving
+    # size. When that size is edited, rescale them so the logged amount (in
+    # g/ml/pieces) — and so the diary — stays exactly as it was eaten.
+    conn.executescript('''
+        CREATE TRIGGER IF NOT EXISTS diary_keep_amount_on_serving_change
+        AFTER UPDATE OF serving_size ON ingredients
+        WHEN OLD.serving_size > 0 AND NEW.serving_size > 0
+             AND OLD.serving_size <> NEW.serving_size
+        BEGIN
+            UPDATE diary_entries
+               SET servings = servings * OLD.serving_size / NEW.serving_size
+             WHERE ingredient_id = NEW.id;
+        END;
+
+        -- Continuous walks of 5+ minutes detected by the phone's step counter.
+        CREATE TABLE IF NOT EXISTS walking_sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            start_at TEXT NOT NULL,
+            end_at TEXT NOT NULL,
+            steps INTEGER NOT NULL,
+            UNIQUE(start_at)
+        );
+        CREATE INDEX IF NOT EXISTS idx_walks_start ON walking_sessions(start_at);
+    ''')
+    conn.commit()
     conn.close()
 
 

@@ -121,6 +121,22 @@
       }
     }
 
+    /* Menu button swaps between ☰ and ✕; a dimmed backdrop sits behind the
+       open menu and closes it when tapped. */
+    .navbar-toggler { font-size: 1.6rem; line-height: 1; padding: .25rem .4rem; color: var(--hx-text); }
+    .navbar-toggler .hx-menu-close { display: none; }
+    .navbar-toggler[aria-expanded="true"] .hx-menu-open { display: none; }
+    .navbar-toggler[aria-expanded="true"] .hx-menu-close { display: inline; }
+    #hx-nav-backdrop {
+      position: fixed; inset: 0; z-index: 1029;
+      background: rgba(0, 0, 0, .45);
+      opacity: 0; pointer-events: none; transition: opacity .2s;
+    }
+    #hx-nav-backdrop.show { opacity: 1; pointer-events: auto; }
+    @media (max-width: 991.98px) {
+      .navbar-collapse { max-height: calc(100dvh - 58px); overflow-y: auto; }
+    }
+
     /* Mobile fix: the list pages wrap their tables in a scroll box with a fixed
        `max-height: calc(100vh - Npx)`. In the Android WebView `vh` can resolve
        so small that this collapses to zero, hiding the entire table. On small
@@ -141,8 +157,9 @@
 <nav class="navbar navbar-expand-lg fixed-top">
   <div class="container-fluid px-3">
     <a class="navbar-brand" href="/"><i class="bi bi-heart-pulse-fill me-1"></i>Hector</a>
-    <button class="navbar-toggler border-0" type="button" data-bs-toggle="collapse" data-bs-target="#nav">
-      <span class="navbar-toggler-icon"></span>
+    <button class="navbar-toggler border-0 shadow-none" type="button" data-bs-toggle="collapse" data-bs-target="#nav"
+            aria-controls="nav" aria-expanded="false" aria-label="Menu">
+      <i class="bi bi-list hx-menu-open"></i><i class="bi bi-x-lg hx-menu-close"></i>
     </button>
     <div class="collapse navbar-collapse" id="nav">
       {% if setup_complete %}
@@ -205,6 +222,8 @@
   </div>
 </nav>
 
+<div id="hx-nav-backdrop"></div>
+
 <div class="container-fluid px-3 px-md-4 py-3">
   {% with msgs = get_flashed_messages(with_categories=true) %}
     {% for cat, msg in msgs %}
@@ -220,6 +239,69 @@
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<script>
+// Hamburger menu: show a backdrop while open; tapping it (or anywhere outside
+// the menu) closes the menu.
+(function () {
+  var nav = document.getElementById('nav');
+  var backdrop = document.getElementById('hx-nav-backdrop');
+  if (!nav || !backdrop) return;
+  var collapse = bootstrap.Collapse.getOrCreateInstance(nav, { toggle: false });
+  nav.addEventListener('show.bs.collapse', function () { backdrop.classList.add('show'); });
+  nav.addEventListener('hide.bs.collapse', function () { backdrop.classList.remove('show'); });
+  backdrop.addEventListener('click', function () { collapse.hide(); });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && nav.classList.contains('show')) collapse.hide();
+  });
+})();
+</script>
+<script>
+// Live search for the list pages: results update as you type (no button).
+// The page passes its AJAX endpoint, the <tbody> to refill, and a callback to
+// reset its own infinite-scroll state with the new first page.
+window.hxLiveSearch = function (opts) {
+  var input = opts.input;
+  if (!input) return;
+  var form = input.form;
+  var last = input.value.trim();
+  var timer = null, seq = 0;
+
+  async function run() {
+    var q = input.value.trim();
+    if (q === last) return;
+    last = q;
+    var params = new URLSearchParams(location.search);
+    if (q) params.set('q', q); else params.delete('q');
+    params.delete('page');
+    history.replaceState(null, '', location.pathname + (params.toString() ? '?' + params : ''));
+    // Sort links carry q — keep them in step with the box.
+    document.querySelectorAll('a.sort-link').forEach(function (a) {
+      var u = new URL(a.href, location.href);
+      if (q) u.searchParams.set('q', q); else u.searchParams.delete('q');
+      a.href = u.pathname + u.search;
+    });
+    if (!opts.tbody) { location.reload(); return; }
+    var mine = ++seq;
+    try {
+      var r = await fetch(opts.endpoint + '?' + params, {
+        headers: { 'X-Requested-With': 'fetch', 'Accept': 'application/json' },
+      });
+      if (!r.ok || mine !== seq) return;
+      var d = await r.json();
+      if (mine !== seq) return;
+      opts.tbody.innerHTML = d.html && d.html.trim() ? d.html
+        : '<tr><td colspan="99" class="text-center text-secondary py-4">No matches.</td></tr>';
+      if (opts.onResults) opts.onResults(d);
+    } catch (e) { /* keep the old rows */ }
+  }
+
+  input.addEventListener('input', function () { clearTimeout(timer); timer = setTimeout(run, 300); });
+  input.addEventListener('search', run);  // the box's own ✕ clear button
+  if (form) form.addEventListener('submit', function (e) {
+    e.preventDefault(); clearTimeout(timer); run(); input.blur();
+  });
+};
+</script>
 <script>
 // Inline date-picker: clicking ANY character of the date text should open the
 // native calendar (browsers only open it from the calendar-icon area otherwise).

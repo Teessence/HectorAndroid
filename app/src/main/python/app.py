@@ -200,8 +200,22 @@ def create_app():
         return jsonify(home_calc.compute_home_status(*_home_range_args()))
 
     def _home_range_args():
-        return (request.args.get('range', 'today'),
-                request.args.get('from'), request.args.get('to'))
+        """Period for Home: from the URL when given (and remembered), else the
+        last one picked — so Home reopens on the same period."""
+        import json
+        a = request.args
+        if 'range' in a:
+            chosen = [a.get('range', 'today'), a.get('from'), a.get('to')]
+            if request.endpoint == 'index':
+                set_setting('home_range', json.dumps(chosen))
+            return tuple(chosen)
+        try:
+            saved = json.loads(get_setting('home_range') or 'null')
+            if isinstance(saved, list) and len(saved) == 3:
+                return tuple(saved)
+        except ValueError:
+            pass
+        return ('today', None, None)
 
     @app.route('/api/nutrient_suggestions/<col>')
     def api_nutrient_suggestions(col):
@@ -291,6 +305,7 @@ def create_app():
                                calorie_deficit=get_calorie_deficit(),
                                garmin_status=garmin.get_status(),
                                last_backup_at=get_setting('last_backup_at'),
+                               ai_key=get_setting('anthropic_api_key') or '',
                                active_page='settings')
 
     @app.route('/settings/display', methods=['POST'])
@@ -322,6 +337,31 @@ def create_app():
         conn.close()
         flash('Calibrated — diary and steps wiped. Starting fresh from your settings.', 'success')
         return redirect(url_for('settings'))
+
+    @app.route('/settings/ai', methods=['POST'])
+    def settings_ai():
+        if request.form.get('remove') == '1':
+            set_setting('anthropic_api_key', '')
+            flash('Claude API key removed.', 'success')
+        else:
+            key = request.form.get('anthropic_api_key', '').strip()
+            if key:
+                set_setting('anthropic_api_key', key)
+                flash('Claude API key saved.', 'success')
+        return redirect(url_for('settings', tab='ai'))
+
+    @app.route('/api/ingredient_ai', methods=['POST'])
+    def api_ingredient_ai():
+        import ai
+        payload = request.get_json(silent=True) or {}
+        try:
+            result = ai.fill_ingredient(get_setting('anthropic_api_key') or '',
+                                        payload.get('conversation') or [])
+        except ai.AIError as e:
+            return jsonify({'error': str(e)}), 400
+        except Exception as e:
+            return jsonify({'error': f'Something went wrong: {e}'}), 500
+        return jsonify(result)
 
     # ── Backup ────────────────────────────────────────────────────────────────
 
@@ -456,7 +496,8 @@ def create_app():
                 return redirect(url_for('ingredients'))
             except Exception as e:
                 flash(f'Error: {e}', 'danger')
-        return render_template('ingredient_form.html', ing=None, active_page='ingredients')
+        return render_template('ingredient_form.html', ing=None, active_page='ingredients',
+                               ai_enabled=bool(get_setting('anthropic_api_key')))
 
     @app.route('/ingredients/<int:ing_id>/edit', methods=['GET', 'POST'])
     def ingredient_edit(ing_id):
@@ -499,7 +540,8 @@ def create_app():
                 return redirect(url_for('ingredients'))
             except Exception as e:
                 flash(f'Error: {e}', 'danger')
-        return render_template('ingredient_form.html', ing=ing, active_page='ingredients')
+        return render_template('ingredient_form.html', ing=ing, active_page='ingredients',
+                               ai_enabled=bool(get_setting('anthropic_api_key')))
 
     @app.route('/ingredients/<int:ing_id>/delete', methods=['POST'])
     def ingredient_delete(ing_id):
@@ -1291,7 +1333,35 @@ def create_app():
         return render_template('steps_index.html', entries=page_entries,
                                today=today_str, page=page, has_more=has_more,
                                garmin_status=garmin.get_status(),
+                               walks=_recent_walks(),
                                active_page='steps')
+
+    def _recent_walks(limit=200):
+        """Logged walks, newest first, with duration and pace worked out."""
+        conn = get_db()
+        rows = conn.execute(
+            'SELECT start_at, end_at, steps FROM walking_sessions ORDER BY start_at DESC LIMIT ?',
+            (limit,)).fetchall()
+        conn.close()
+        out = []
+        for r in rows:
+            try:
+                s = datetime.strptime(r['start_at'], '%Y-%m-%d %H:%M:%S')
+                e = datetime.strptime(r['end_at'], '%Y-%m-%d %H:%M:%S')
+            except ValueError:
+                continue
+            minutes = max(1.0, (e - s).total_seconds() / 60)
+            out.append({
+                'date': s.strftime('%a %d %b %Y'),
+                'start': s.strftime('%H:%M'),
+                'end': e.strftime('%H:%M'),
+                'minutes': int(round(minutes)),
+                'steps': r['steps'],
+                'per_min': int(round(r['steps'] / minutes)),
+                'per_hour': int(round(r['steps'] / minutes * 60)),
+                'relative': format_relative_time(r['start_at']),
+            })
+        return out
 
     @app.route('/steps/<date_str>', methods=['GET', 'POST'])
     def steps_day(date_str):

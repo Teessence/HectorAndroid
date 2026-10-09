@@ -33,12 +33,10 @@
 
 {# ─────────────────────────── STOCK (editable list) ──────────────────── #}
 <div class="tab-pane fade show active" id="inv-stock" role="tabpanel">
-  <form method="get" class="d-flex gap-2 mb-3">
+  <form method="get" class="d-flex gap-2 mb-3" role="search">
     <input type="search" name="q" class="form-control form-control-sm"
            style="max-width:280px" placeholder="Search by name, shop, or brand…"
            value="{{ q }}">
-    <button class="btn btn-outline-secondary btn-sm" type="submit"><i class="bi bi-search"></i></button>
-    {% if q %}<a href="/inventory" class="btn btn-outline-danger btn-sm"><i class="bi bi-x"></i></a>{% endif %}
   </form>
 
   {# Empty form whose ID owns every paginated input via form="inv-form". This
@@ -188,19 +186,32 @@ async function invLoadMore() {
   }
 }
 
-if (invScroll && invHasMore) {
+const fill = () => {
+  if (!invHasMore || invLoading || !invScroll) return;
+  if (invScroll.scrollHeight <= invScroll.clientHeight + 4) {
+    invLoadMore().then(fill);
+  }
+};
+if (invScroll) {
   invScroll.addEventListener('scroll', () => {
     const nearBottom = invScroll.scrollTop + invScroll.clientHeight
                        >= invScroll.scrollHeight - 200;
     if (nearBottom) invLoadMore();
   });
-  const fill = () => {
-    if (!invHasMore || invLoading) return;
-    if (invScroll.scrollHeight <= invScroll.clientHeight + 4) {
-      invLoadMore().then(fill);
-    }
-  };
   fill();
 }
+
+// Results update as you type.
+hxLiveSearch({
+  input: document.querySelector('form[role="search"] input[name="q"]'),
+  endpoint: '/inventory',
+  tbody: invTbody,
+  onResults: d => {
+    invHasMore = !!d.has_more;
+    invNextPage = 2;
+    if (invScroll) invScroll.scrollTop = 0;
+    fill();
+  },
+});
 </script>
 {% endblock %}

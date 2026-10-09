@@ -31,6 +31,7 @@
   <li class="nav-item"><button class="nav-link"        data-bs-toggle="tab" data-bs-target="#set-steprates" type="button"><i class="bi bi-person-walking me-1"></i>Step Rates</button></li>
   <li class="nav-item"><button class="nav-link"        data-bs-toggle="tab" data-bs-target="#set-display"   type="button"><i class="bi bi-palette me-1"></i>Display</button></li>
   <li class="nav-item"><button class="nav-link"        data-bs-toggle="tab" data-bs-target="#set-backup"    type="button"><i class="bi bi-cloud-arrow-down me-1"></i>Backup</button></li>
+  <li class="nav-item"><button class="nav-link"        data-bs-toggle="tab" data-bs-target="#set-ai"        type="button"><i class="bi bi-stars me-1"></i>AI</button></li>
   <li class="nav-item"><button class="nav-link"        data-bs-toggle="tab" data-bs-target="#set-reset"     type="button"><i class="bi bi-arrow-counterclockwise me-1 text-danger"></i>Reset</button></li>
 </ul>
 
@@ -363,6 +364,39 @@
           </form>
         </div>
       </div>
+    </div>
+  </div>
+</div>
+
+{# ──────────────────────────────── AI ───────────────────────────────── #}
+<div class="tab-pane fade" id="set-ai" role="tabpanel">
+  <div class="card" style="max-width:560px">
+    <div class="card-body p-4">
+      <h6 class="text-secondary mb-2"><i class="bi bi-stars me-1"></i>Claude ingredient helper</h6>
+      <p class="text-secondary mb-3" style="font-size:.85rem">
+        With a Claude API key, the ingredient form gets a small chat: paste a product link or
+        describe the food and Claude fills in calories, macros, vitamins and minerals for you to
+        check before you press Create. Requests are billed to your Anthropic account. Get a key at
+        <span class="text-body">console.anthropic.com</span>.
+      </p>
+      <form method="post" action="/settings/ai" autocomplete="off">
+        {% if ai_key %}
+          <div class="mb-2 small">
+            <i class="bi bi-check-circle-fill text-success me-1"></i>Key saved
+            (<code>…{{ ai_key[-4:] }}</code>). It's never included in backups.
+          </div>
+        {% endif %}
+        <label class="form-label fw-semibold">{{ 'Replace API key' if ai_key else 'API key' }}</label>
+        <input type="password" name="anthropic_api_key" class="form-control mb-2"
+               placeholder="sk-ant-…" autocomplete="off" spellcheck="false">
+        <div class="d-flex gap-2">
+          <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>Save key</button>
+          {% if ai_key %}
+          <button type="submit" name="remove" value="1" class="btn btn-outline-danger"
+                  formnovalidate onclick="return confirm('Remove the saved Claude API key?')">Remove</button>
+          {% endif %}
+        </div>
+      </form>
     </div>
   </div>
 </div>

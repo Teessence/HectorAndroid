@@ -145,21 +145,36 @@ def _calorie_target():
 RANGES = [
     ('today', 'Today'),
     ('yesterday', 'Yesterday'),
+    ('day', 'Specific day'),
     ('this_week', 'Current week'),
     ('last_week', 'Last week'),
     ('this_month', 'Current month'),
     ('last_month', 'Last month'),
     ('this_year', 'Current year'),
+    ('since_start', 'Since starting date'),
     ('custom', 'Custom range'),
 ]
+RANGE_KEYS = {k for k, _ in RANGES}
+
+
+def _parse(d):
+    try:
+        return datetime.strptime(d, '%Y-%m-%d').date()
+    except (TypeError, ValueError):
+        return None
 
 
 def resolve_range(key, start=None, end=None):
-    """Map a range key (+ custom dates) to (key, start_date, end_date).
-    Weeks start on Monday; current periods end today, never in the future."""
+    """Map a range key (+ dates for 'day'/'custom') to (key, start_date, end_date).
+    Weeks start on Monday; nothing ever extends past today."""
     today = date.today()
     if key == 'yesterday':
         s = e = today - timedelta(days=1)
+    elif key == 'day':
+        s = _parse(start)
+        if s is None:
+            return resolve_range('today')
+        s = e = min(s, today)
     elif key == 'this_week':
         s, e = today - timedelta(days=today.weekday()), today
     elif key == 'last_week':
@@ -172,11 +187,12 @@ def resolve_range(key, start=None, end=None):
         s = e.replace(day=1)
     elif key == 'this_year':
         s, e = today.replace(month=1, day=1), today
+    elif key == 'since_start':
+        s = _parse(get_setting('starting_date')) or today
+        s, e = min(s, today), today
     elif key == 'custom':
-        try:
-            s = datetime.strptime(start, '%Y-%m-%d').date()
-            e = datetime.strptime(end, '%Y-%m-%d').date()
-        except (TypeError, ValueError):
+        s, e = _parse(start), _parse(end)
+        if s is None or e is None:
             return resolve_range('today')
         if s > e:
             s, e = e, s
@@ -185,6 +201,18 @@ def resolve_range(key, start=None, end=None):
     else:
         key, s, e = 'today', today, today
     return key, s, e
+
+
+def range_label(start, end):
+    """Short human label: 'Fri 9 Oct' or '1 Oct – 9 Oct' (years only if needed)."""
+    def fmt(d, with_year):
+        return f'{d:%a} {d.day} {d:%b}' + (f' {d.year}' if with_year else '')
+    if start == end:
+        return fmt(start, start.year != date.today().year)
+    with_year = start.year != end.year or end.year != date.today().year
+    short = lambda d: f'{d.day} {d:%b}' + (f' {d.year}' if with_year else '')
+    return f'{short(start)} – {short(end)}'
+
 
 
 def _range_totals(conn, start, end):
@@ -279,6 +307,7 @@ def compute_home_status(range_key='today', range_from=None, range_to=None):
             'range_to': end_s,
             'range_days': days,
             'ranges': RANGES,
+            'range_label': range_label(r_start, r_end),
             # steps tile
             'morning_weight': round(morning_weight, 1) if morning_weight is not None else None,
             'steps_required': steps_required,

@@ -19,9 +19,10 @@
     word-break: break-word;
     line-height: 1.2;
   }
+  .ing-card-meta { display: none; font-size: .72rem; }
   /* Scrollable table area for infinite scroll + sticky header. */
   .ing-table-scroll {
-    max-height: calc(100vh - 220px);
+    max-height: calc(100vh - 260px);
     overflow: auto;
   }
   .ing-table-scroll thead th {
@@ -42,17 +43,47 @@
   }
   .ing-table thead th:first-child { z-index: 3; }
   .ing-table tbody tr:hover td:first-child { background: var(--hx-panel2); }
-  /* On phones keep the frozen column narrow so data stays visible. */
-  @media (max-width: 575.98px) {
-    .ing-table td.ing-name-cell { min-width: 120px !important; max-width: 150px !important; }
-    .ing-table .ing-thumb { width: 40px !important; height: 40px !important; }
+
+  /* Column groups: show one family of columns at a time (chips above). */
+  .ing-table[data-group="macro"] .g-info, .ing-table[data-group="macro"] .g-vit, .ing-table[data-group="macro"] .g-min,
+  .ing-table[data-group="info"]  .g-macro, .ing-table[data-group="info"]  .g-vit, .ing-table[data-group="info"]  .g-min,
+  .ing-table[data-group="vit"]   .g-info, .ing-table[data-group="vit"]   .g-macro, .ing-table[data-group="vit"]  .g-min,
+  .ing-table[data-group="min"]   .g-info, .ing-table[data-group="min"]   .g-macro, .ing-table[data-group="min"]  .g-vit {
+    display: none;
   }
-  /* Tiny "loading more…" footer that appears mid-fetch. */
-  #ing-loadmore-row td {
-    text-align: center;
-    color: #8b949e;
-    font-size: .82rem;
-    padding: .6rem;
+  .ing-groups .btn { border-radius: 99px; }
+
+  /* Phones: no sideways scrolling at all — every row becomes a card with the
+     chosen group's values in a small grid, and the page scrolls vertically. */
+  #ingSort { display: none; }
+  @media (max-width: 767.98px) {
+    #ingSort { display: block; }
+    .ing-table-scroll { max-height: none !important; overflow: visible !important; }
+    .ing-table thead { display: none; }
+    .ing-table, .ing-table tbody { display: block; }
+    .ing-table tr {
+      display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: .45rem .75rem; padding: .75rem .25rem; position: relative;
+      border-bottom: 1px solid var(--hx-border);
+    }
+    .ing-table td {
+      display: block; padding: 0 !important; border: 0 !important;
+      text-align: left !important; white-space: normal !important;
+      background: transparent !important; box-shadow: none !important;
+    }
+    .ing-table td[data-label]::before {
+      content: attr(data-label); display: block;
+      font-size: .66rem; color: #8b949e; line-height: 1.2;
+    }
+    .ing-table td.ing-name-cell {
+      grid-column: 1 / -1; position: static !important;
+      min-width: 0 !important; max-width: none !important; padding-right: 2.5rem !important;
+    }
+    .ing-table .ing-thumb { width: 44px !important; height: 44px !important; }
+    .ing-card-meta { display: block; }
+    .ing-table td.ing-actions { position: absolute; top: .75rem; right: .25rem; }
+    .ing-table .ing-pct { display: block; }
+    .ing-table td.g-info br { display: none; }
   }
 </style>
 
@@ -63,18 +94,40 @@
   </a>
 </div>
 
-<form class="mb-3 d-flex gap-2" method="get">
+<form class="mb-2" method="get" role="search">
   <input type="hidden" name="sort" value="{{ sort_col }}">
   <input type="hidden" name="dir"  value="{{ sort_dir }}">
-  <input type="search" name="q" class="form-control form-control-sm" style="max-width:280px"
-         placeholder="Search by name, shop, or brand…" value="{{ q }}">
-  <button class="btn btn-outline-secondary btn-sm" type="submit"><i class="bi bi-search"></i></button>
-  {% if q %}<a href="/ingredients" class="btn btn-outline-danger btn-sm"><i class="bi bi-x"></i></a>{% endif %}
+  <input type="search" name="q" class="form-control form-control-sm" style="max-width:340px"
+         placeholder="Search by name, shop, or brand…" value="{{ q }}" autocomplete="off">
 </form>
 
-{% macro th(col, label, title='', align='') %}
+{% set SORTS = [
+  ('name','Name'),('last_eaten','Last eaten'),('calories','Calories'),('protein','Protein'),
+  ('protein_per_calorie','Protein / calorie'),('fat','Fat'),('carbs','Carbohydrates'),('fiber','Fiber'),
+  ('sugar','Sugar'),('salt','Salt'),('package_cost','Package cost'),
+  ('vit_a','Vitamin A'),('vit_c','Vitamin C'),('vit_d','Vitamin D'),('vit_b12','Vitamin B12'),
+  ('calcium','Calcium'),('iron','Iron'),('magnesium','Magnesium'),('potassium','Potassium'),('zinc','Zinc'),
+] %}
+<div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+  <div class="ing-groups d-flex flex-wrap gap-1" role="group" aria-label="Columns">
+    {% for key, label in [('macro','Macros'),('vit','Vitamins'),('min','Minerals'),('info','Details'),('all','All')] %}
+    <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2" data-group="{{ key }}">{{ label }}</button>
+    {% endfor %}
+  </div>
+  <select id="ingSort" class="form-select form-select-sm ms-auto" style="max-width:200px" aria-label="Sort">
+    {% for col, label in SORTS %}
+      {% for d in ['desc', 'asc'] %}
+      <option value="{{ col }}|{{ d }}" {% if sort_col == col and sort_dir == d %}selected{% endif %}>
+        {{ label }} {{ '↓' if d == 'desc' else '↑' }}
+      </option>
+      {% endfor %}
+    {% endfor %}
+  </select>
+</div>
+
+{% macro th(col, label, title='', align='', group='') %}
   {% set new_dir = 'asc' if (sort_col == col and sort_dir == 'desc') else 'desc' %}
-  <th title="{{ title or label }}" style="white-space:nowrap" {% if align %}class="{{ align }}"{% endif %}>
+  <th title="{{ title or label }}" style="white-space:nowrap" class="{{ align }} {{ group }}">
     <a href="?sort={{ col }}&dir={{ new_dir }}{% if q %}&q={{ q }}{% endif %}"
        class="sort-link {{ 'active' if sort_col == col }}">
       {{ label }}{% if sort_col == col %}<i class="bi bi-caret-{{ 'up' if sort_dir == 'asc' else 'down' }}-fill ms-1" style="font-size:.65rem"></i>{% endif %}
@@ -84,50 +137,50 @@
 
 {% if ingredients %}
 <div class="ing-table-scroll" id="ingTableScroll" style="font-size:.82rem">
-  <table class="table table-hover align-middle mb-0 ing-table" id="ingTable">
+  <table class="table table-hover align-middle mb-0 ing-table" id="ingTable" data-group="macro">
     <thead>
       <tr>
         {{ th('name',         'Name') }}
-        {{ th('unit',         'Unit') }}
-        {{ th('shop',         'Shop') }}
-        {{ th('company',      'Brand') }}
-        {{ th('last_eaten',   'Last Eaten', 'Most recent date this ingredient was added to your diary (direct or via recipe)', 'text-center') }}
-        {{ th('serving_size', 'Serving Size', 'Serving Size',    'text-center') }}
-        {{ th('package_size', 'Package Size', 'Package Size',    'text-center') }}
-        {{ th('package_cost', 'Package Cost', 'Package Cost (€)','text-center') }}
+        {{ th('unit',         'Unit', '', '', 'g-info') }}
+        {{ th('shop',         'Shop', '', '', 'g-info') }}
+        {{ th('company',      'Brand', '', '', 'g-info') }}
+        {{ th('last_eaten',   'Last Eaten', 'Most recent date this ingredient was added to your diary (direct or via recipe)', 'text-center', 'g-info') }}
+        {{ th('serving_size', 'Serving Size', 'Serving Size',    'text-center', 'g-info') }}
+        {{ th('package_size', 'Package Size', 'Package Size',    'text-center', 'g-info') }}
+        {{ th('package_cost', 'Package Cost', 'Package Cost (€)','text-center', 'g-info') }}
         {# Nutrition #}
-        {{ th('calories',   'Calories',  'Calories (kcal)',       'text-center') }}
-        {{ th('protein',    'Protein',   'Protein (g)',           'text-center') }}
-        {{ th('protein_per_calorie', 'Protein / Calorie', 'Protein per Calorie (g/kcal)', 'text-center') }}
-        {{ th('fat',        'Fat',       'Fat (g)',               'text-center') }}
-        {{ th('saturates',  'Saturates', 'Saturates (g)',         'text-center') }}
-        {{ th('carbs',      'Carbohydrates', 'Carbohydrates (g)', 'text-center') }}
-        {{ th('fiber',      'Fiber',     'Fiber (g)',             'text-center') }}
-        {{ th('sugar',      'Sugar',     'Sugar (g)',             'text-center') }}
-        {{ th('salt',       'Salt',      'Salt (g)',              'text-center') }}
+        {{ th('calories',   'Calories',  'Calories (kcal)',       'text-center', 'g-macro') }}
+        {{ th('protein',    'Protein',   'Protein (g)',           'text-center', 'g-macro') }}
+        {{ th('protein_per_calorie', 'Protein / Calorie', 'Protein per Calorie (g/kcal)', 'text-center', 'g-macro') }}
+        {{ th('fat',        'Fat',       'Fat (g)',               'text-center', 'g-macro') }}
+        {{ th('saturates',  'Saturates', 'Saturates (g)',         'text-center', 'g-macro') }}
+        {{ th('carbs',      'Carbohydrates', 'Carbohydrates (g)', 'text-center', 'g-macro') }}
+        {{ th('fiber',      'Fiber',     'Fiber (g)',             'text-center', 'g-macro') }}
+        {{ th('sugar',      'Sugar',     'Sugar (g)',             'text-center', 'g-macro') }}
+        {{ th('salt',       'Salt',      'Salt (g)',              'text-center', 'g-macro') }}
         {# Vitamins #}
-        {{ th('vit_a',  'Vitamin A',  'Vitamin A (μg)',                'text-center') }}
-        {{ th('vit_c',  'Vitamin C',  'Vitamin C (mg)',                'text-center') }}
-        {{ th('vit_d',  'Vitamin D',  'Vitamin D (μg)',                'text-center') }}
-        {{ th('vit_e',  'Vitamin E',  'Vitamin E (mg)',                'text-center') }}
-        {{ th('vit_k',  'Vitamin K',  'Vitamin K (μg)',                'text-center') }}
-        {{ th('vit_b1', 'Vitamin B1', 'Vitamin B1 Thiamine (mg)',      'text-center') }}
-        {{ th('vit_b2', 'Vitamin B2', 'Vitamin B2 Riboflavin (mg)',    'text-center') }}
-        {{ th('vit_b3', 'Vitamin B3', 'Vitamin B3 Niacin (mg)',        'text-center') }}
-        {{ th('vit_b6', 'Vitamin B6', 'Vitamin B6 (mg)',               'text-center') }}
-        {{ th('vit_b9', 'Vitamin B9', 'Vitamin B9 Folate (μg)',        'text-center') }}
-        {{ th('vit_b12','Vitamin B12','Vitamin B12 (μg)',              'text-center') }}
+        {{ th('vit_a',  'Vitamin A',  'Vitamin A (μg)',                'text-center', 'g-vit') }}
+        {{ th('vit_c',  'Vitamin C',  'Vitamin C (mg)',                'text-center', 'g-vit') }}
+        {{ th('vit_d',  'Vitamin D',  'Vitamin D (μg)',                'text-center', 'g-vit') }}
+        {{ th('vit_e',  'Vitamin E',  'Vitamin E (mg)',                'text-center', 'g-vit') }}
+        {{ th('vit_k',  'Vitamin K',  'Vitamin K (μg)',                'text-center', 'g-vit') }}
+        {{ th('vit_b1', 'Vitamin B1', 'Vitamin B1 Thiamine (mg)',      'text-center', 'g-vit') }}
+        {{ th('vit_b2', 'Vitamin B2', 'Vitamin B2 Riboflavin (mg)',    'text-center', 'g-vit') }}
+        {{ th('vit_b3', 'Vitamin B3', 'Vitamin B3 Niacin (mg)',        'text-center', 'g-vit') }}
+        {{ th('vit_b6', 'Vitamin B6', 'Vitamin B6 (mg)',               'text-center', 'g-vit') }}
+        {{ th('vit_b9', 'Vitamin B9', 'Vitamin B9 Folate (μg)',        'text-center', 'g-vit') }}
+        {{ th('vit_b12','Vitamin B12','Vitamin B12 (μg)',              'text-center', 'g-vit') }}
         {# Minerals #}
-        {{ th('calcium',    'Calcium',    'Calcium (mg)',    'text-center') }}
-        {{ th('iron',       'Iron',       'Iron (mg)',       'text-center') }}
-        {{ th('magnesium',  'Magnesium',  'Magnesium (mg)',  'text-center') }}
-        {{ th('phosphorus', 'Phosphorus', 'Phosphorus (mg)', 'text-center') }}
-        {{ th('potassium',  'Potassium',  'Potassium (mg)',  'text-center') }}
-        {{ th('zinc',       'Zinc',       'Zinc (mg)',       'text-center') }}
-        {{ th('selenium',   'Selenium',   'Selenium (μg)',   'text-center') }}
-        {{ th('iodine',     'Iodine',     'Iodine (μg)',     'text-center') }}
-        {{ th('copper',     'Copper',     'Copper (mg)',     'text-center') }}
-        {{ th('manganese',  'Manganese',  'Manganese (mg)',  'text-center') }}
+        {{ th('calcium',    'Calcium',    'Calcium (mg)',    'text-center', 'g-min') }}
+        {{ th('iron',       'Iron',       'Iron (mg)',       'text-center', 'g-min') }}
+        {{ th('magnesium',  'Magnesium',  'Magnesium (mg)',  'text-center', 'g-min') }}
+        {{ th('phosphorus', 'Phosphorus', 'Phosphorus (mg)', 'text-center', 'g-min') }}
+        {{ th('potassium',  'Potassium',  'Potassium (mg)',  'text-center', 'g-min') }}
+        {{ th('zinc',       'Zinc',       'Zinc (mg)',       'text-center', 'g-min') }}
+        {{ th('selenium',   'Selenium',   'Selenium (μg)',   'text-center', 'g-min') }}
+        {{ th('iodine',     'Iodine',     'Iodine (μg)',     'text-center', 'g-min') }}
+        {{ th('copper',     'Copper',     'Copper (mg)',     'text-center', 'g-min') }}
+        {{ th('manganese',  'Manganese',  'Manganese (mg)',  'text-center', 'g-min') }}
         <th></th>
       </tr>
     </thead>
@@ -140,7 +193,11 @@
 {% else %}
 <div class="text-center py-5 text-secondary">
   <i class="bi bi-basket" style="font-size:3rem;opacity:.3"></i>
+  {% if q %}
+  <p class="mt-2">Nothing matches "{{ q }}". <a href="/ingredients">Show all</a></p>
+  {% else %}
   <p class="mt-2">No ingredients yet. <a href="/ingredients/add">Add your first one.</a></p>
+  {% endif %}
 </div>
 {% endif %}
 
@@ -162,6 +219,28 @@ function bindRowClicks(scope) {
 
 const tbody = document.getElementById('ingTbody');
 if (tbody) bindRowClicks(tbody);
+
+// ── Column groups (remembered per phone) ────────────────────────────────────
+const table = document.getElementById('ingTable');
+const groupBtns = document.querySelectorAll('.ing-groups [data-group]');
+function setGroup(g) {
+  if (table) table.dataset.group = g;
+  groupBtns.forEach(b => b.classList.toggle('active', b.dataset.group === g));
+  try { localStorage.setItem('hx-ing-group', g); } catch (e) {}
+}
+groupBtns.forEach(b => b.addEventListener('click', () => setGroup(b.dataset.group)));
+let savedGroup = 'macro';
+try { savedGroup = localStorage.getItem('hx-ing-group') || 'macro'; } catch (e) {}
+setGroup(savedGroup);
+
+// ── Sort dropdown (phones, where the header row is hidden) ──────────────────
+const sortSel = document.getElementById('ingSort');
+if (sortSel) sortSel.addEventListener('change', () => {
+  const [col, dir] = sortSel.value.split('|');
+  const params = new URLSearchParams(location.search);
+  params.set('sort', col); params.set('dir', dir); params.delete('page');
+  location.search = params.toString();
+});
 
 // ── Infinite scroll ─────────────────────────────────────────────────────────
 const scrollContainer = document.getElementById('ingTableScroll');
@@ -189,22 +268,38 @@ async function loadMore() {
   }
 }
 
-if (scrollContainer && hasMore) {
+// Keep pulling pages while the list doesn't fill its box (on phones the box
+// grows with the page, so the window scroll drives it instead).
+const fillToViewport = () => {
+  if (!hasMore || loading || !scrollContainer) return;
+  if (scrollContainer.scrollHeight <= scrollContainer.clientHeight + 4) {
+    loadMore().then(fillToViewport);
+  }
+};
+if (scrollContainer) {
   scrollContainer.addEventListener('scroll', () => {
     const nearBottom = scrollContainer.scrollTop + scrollContainer.clientHeight
                        >= scrollContainer.scrollHeight - 200;
     if (nearBottom) loadMore();
   });
-  // First batch already in the DOM may be shorter than the viewport (e.g. zoom
-  // out, narrow filter result that overflows). Keep pulling until either the
-  // page fills or we hit the end.
-  const fillToViewport = () => {
-    if (!hasMore || loading) return;
-    if (scrollContainer.scrollHeight <= scrollContainer.clientHeight + 4) {
-      loadMore().then(fillToViewport);
-    }
-  };
+  window.addEventListener('scroll', () => {
+    if (window.innerHeight + window.scrollY >= document.body.scrollHeight - 400) loadMore();
+  }, { passive: true });
   fillToViewport();
 }
+
+// ── Live search ─────────────────────────────────────────────────────────────
+hxLiveSearch({
+  input: document.querySelector('form[role="search"] input[name="q"]'),
+  endpoint: '/ingredients',
+  tbody: tbody,
+  onResults: d => {
+    hasMore = !!d.has_more;
+    nextPage = 2;
+    bindRowClicks(tbody);
+    if (scrollContainer) scrollContainer.scrollTop = 0;
+    fillToViewport();
+  },
+});
 </script>
 {% endblock %}

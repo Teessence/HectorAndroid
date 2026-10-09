@@ -7,6 +7,25 @@ user manually edited (source='manual') is left alone, mirroring the old rule.
 from datetime import datetime
 
 
+def log_walk(start_at, end_at, steps):
+    """Record a continuous walk ('YYYY-MM-DD HH:MM:SS' bounds) detected by the
+    step service. Purely a log — daily step totals are untouched."""
+    from database import get_db
+    try:
+        steps = int(steps)
+    except (TypeError, ValueError):
+        return False
+    conn = get_db()
+    try:
+        conn.execute(
+            'INSERT OR REPLACE INTO walking_sessions(start_at, end_at, steps) VALUES (?, ?, ?)',
+            (str(start_at), str(end_at), steps))
+        conn.commit()
+        return True
+    finally:
+        conn.close()
+
+
 def set_today_steps(date_str, steps):
     """Upsert steps for date_str (YYYY-MM-DD). Returns True if written."""
     # Imported lazily so mobile_main.configure() has already set the DB path.

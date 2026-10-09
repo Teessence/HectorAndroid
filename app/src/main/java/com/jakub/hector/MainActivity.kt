@@ -112,8 +112,16 @@ class MainActivity : AppCompatActivity() {
             Python.getInstance()
                 .getModule("mobile_main")
                 .callAttr("start_server", HectorApp.PORT)
-            runOnUiThread { webView.loadUrl(HectorApp.BASE_URL) }
+            // Reopen the page that was showing if Android recreated us.
+            val restore = savedInstanceState?.getString(KEY_URL)
+                ?.takeIf { it.startsWith(HectorApp.BASE_URL) }
+            runOnUiThread { webView.loadUrl(restore ?: HectorApp.BASE_URL) }
         }.start()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        webView.url?.let { outState.putString(KEY_URL, it) }
     }
 
     override fun onResume() {
@@ -183,5 +191,9 @@ class MainActivity : AppCompatActivity() {
         val ok = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q ||
             hasPermission(Manifest.permission.ACTIVITY_RECOGNITION)
         if (ok) StepService.start(this)
+    }
+
+    companion object {
+        private const val KEY_URL = "webview_url"
     }
 }

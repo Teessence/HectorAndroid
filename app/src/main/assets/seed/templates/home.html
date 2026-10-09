@@ -72,23 +72,34 @@
   {% endif %}
 
   {# ── Period picker ─────────────────────────────────────────────────────── #}
+  {# One row: the period, then only what it needs — a tappable date for a
+     single day, the date span for a preset, two date fields for custom. #}
   <form id="rangeForm" method="get" action="/" class="mb-3">
-    <div class="d-flex align-items-center gap-2">
-      <i class="bi bi-calendar3 text-secondary"></i>
-      <select name="range" id="rangeSelect" class="form-select form-select-sm">
+    <div class="d-flex align-items-center gap-2 flex-wrap">
+      <select name="range" id="rangeSelect" class="form-select form-select-sm w-auto">
         {% for key, label in ranges %}
           <option value="{{ key }}" {% if key == range_key %}selected{% endif %}>{{ label }}</option>
         {% endfor %}
       </select>
+      {% if range_key in ('today', 'yesterday', 'day') %}
+        <label class="inline-date-picker text-secondary small mb-0" title="Pick a day">
+          <i class="bi bi-calendar3 me-1"></i><span class="date-text">{{ range_label }}</span>
+          <input type="date" id="dayPicker" value="{{ range_from }}" max="{{ today_date }}">
+        </label>
+      {% elif range_key != 'custom' %}
+        <span class="text-secondary small">{{ range_label }} · {{ range_days }} days</span>
+      {% endif %}
     </div>
     <div id="customRange" class="d-flex align-items-center gap-2 mt-2" {% if range_key != 'custom' %}hidden{% endif %}>
-      <input type="date" name="from" class="form-control form-control-sm" value="{{ range_from }}" max="{{ today_date }}">
+      <input type="date" name="from" class="form-control form-control-sm" value="{{ range_from }}" max="{{ today_date }}"
+             {% if range_key != 'custom' %}disabled{% endif %}>
       <span class="text-secondary">–</span>
-      <input type="date" name="to" class="form-control form-control-sm" value="{{ range_to }}" max="{{ today_date }}">
+      <input type="date" name="to" class="form-control form-control-sm" value="{{ range_to }}" max="{{ today_date }}"
+             {% if range_key != 'custom' %}disabled{% endif %}>
       <button type="submit" class="btn btn-sm btn-primary">Show</button>
     </div>
     {% if range_days > 1 %}
-    <div class="hx-sub">{{ range_from }} → {{ range_to }} · {{ range_days }} days · targets are daily × {{ range_days }}</div>
+    <div class="hx-sub">Targets are daily × {{ range_days }}.</div>
     {% endif %}
   </form>
 
@@ -225,17 +236,27 @@
   var rangeForm = document.getElementById('rangeForm');
   var rangeSelect = document.getElementById('rangeSelect');
   var customRange = document.getElementById('customRange');
+  var dayPicker = document.getElementById('dayPicker');
+  function showDay(d) { location.href = '/?range=day&from=' + encodeURIComponent(d); }
   if (rangeSelect) {
     rangeSelect.addEventListener('change', function () {
-      var custom = rangeSelect.value === 'custom';
+      var v = rangeSelect.value;
+      var custom = v === 'custom';
       customRange.hidden = !custom;
       customRange.querySelectorAll('input').forEach(function (i) { i.disabled = !custom; });
-      if (!custom) rangeForm.submit();
+      if (v === 'day') {
+        // Open the calendar straight away when one is on screen.
+        if (dayPicker && typeof dayPicker.showPicker === 'function') {
+          try { dayPicker.showPicker(); return; } catch (e) {}
+        }
+        showDay(dayPicker ? dayPicker.value : '{{ today_date }}');
+      } else if (!custom) {
+        rangeForm.submit();
+      }
     });
-    // Don't send stale custom dates with a preset range.
-    if (rangeSelect.value !== 'custom') {
-      customRange.querySelectorAll('input').forEach(function (i) { i.disabled = true; });
-    }
+  }
+  if (dayPicker) {
+    dayPicker.addEventListener('change', function () { if (dayPicker.value) showDay(dayPicker.value); });
   }
   // Same period for the live refresh and the suggestion lookups.
   var rangeQuery = location.search || '';

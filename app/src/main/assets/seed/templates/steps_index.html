@@ -22,6 +22,21 @@
   {% endif %}
 </div>
 
+<ul class="nav nav-tabs mb-3" role="tablist">
+  <li class="nav-item">
+    <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#steps-days" type="button" id="tab-days">
+      <i class="bi bi-calendar3 me-1"></i>Days
+    </button>
+  </li>
+  <li class="nav-item">
+    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#steps-walks" type="button" id="tab-walks">
+      <i class="bi bi-signpost-split me-1"></i>Walks{% if walks %} <span class="badge text-bg-secondary">{{ walks|length }}</span>{% endif %}
+    </button>
+  </li>
+</ul>
+
+<div class="tab-content">
+<div class="tab-pane fade show active" id="steps-days" role="tabpanel">
 <div class="card">
   <div class="steps-table-scroll" id="stepsTableScroll">
     <table class="table table-hover align-middle mb-0">
@@ -49,10 +64,61 @@
   <a href="/settings">Settings</a>.
   Locked rows were auto-fetched after noon the next day — click the pencil to unlock and override.
 </div>
+</div>{# /steps-days #}
+
+{# Walks: continuous walking of 5+ minutes, logged automatically by the phone. #}
+<div class="tab-pane fade" id="steps-walks" role="tabpanel">
+  {% if walks %}
+  <div class="card">
+    <div class="list-group list-group-flush">
+      {% for w in walks %}
+      <div class="list-group-item d-flex justify-content-between align-items-center gap-3"
+           style="background:var(--hx-panel);border-color:var(--hx-border)">
+        <div style="min-width:0">
+          <div class="fw-semibold">{{ w.date }}</div>
+          <div class="text-secondary small">
+            {{ w.start }}–{{ w.end }} · {{ w.minutes }} min · <span title="{{ w.date }} {{ w.start }}">{{ w.relative }}</span>
+          </div>
+        </div>
+        <div class="text-end text-nowrap">
+          <div class="fw-bold" style="color:#388bfd">{{ '{:,}'.format(w.steps) }} <span class="text-secondary fw-normal small">steps</span></div>
+          <div class="text-secondary small">{{ '{:,}'.format(w.per_hour) }}/h · {{ w.per_min }}/min</div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% else %}
+  <div class="text-center text-secondary py-5">
+    <i class="bi bi-signpost-split" style="font-size:2.5rem;opacity:.35"></i>
+    <p class="mt-2 mb-0">No walks yet.</p>
+    <p class="small">Walk for 5 minutes or more with your phone and it shows up here.</p>
+  </div>
+  {% endif %}
+  <div class="text-secondary mt-2" style="font-size:.8rem">
+    A walk is continuous walking of at least 5 minutes; pauses over 2 minutes end it.
+    Your daily step totals don't change — this is an extra log.
+  </div>
+</div>
+</div>{# /tab-content #}
 
 {% endblock %}
 
 {% block scripts %}
+<script>
+// Remember whether Days or Walks was open.
+(function () {
+  var key = 'hx-steps-tab', saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  var btn = saved && document.getElementById(saved);
+  if (btn) bootstrap.Tab.getOrCreateInstance(btn).show();
+  document.querySelectorAll('#tab-days, #tab-walks').forEach(function (b) {
+    b.addEventListener('shown.bs.tab', function () {
+      try { localStorage.setItem(key, b.id); } catch (e) {}
+    });
+  });
+})();
+</script>
 <script>
 const fmtThousands = v => Number(v).toLocaleString('en-US');
 const stripCommas  = s => (s || '').replace(/,/g, '').trim();
