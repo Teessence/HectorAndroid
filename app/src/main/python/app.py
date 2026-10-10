@@ -1353,6 +1353,7 @@ def create_app():
             (limit,)).fetchall()
         conn.close()
         out = []
+        weights = {}  # date -> weight that day (one lookup per day)
         for r in rows:
             try:
                 s = datetime.strptime(r['start_at'], '%Y-%m-%d %H:%M:%S')
@@ -1360,7 +1361,15 @@ def create_app():
             except ValueError:
                 continue
             minutes = max(1.0, (e - s).total_seconds() / 60)
+            day = r['start_at'][:10]
+            if day not in weights:
+                weights[day] = get_current_weight(day)
+            # Same calories-per-step table as the rest of Hector, at that day's weight.
+            kcal = r['steps'] * calories_per_step(weights[day])
             out.append({
+                'kcal': int(round(kcal)),
+                'kcal_per_min': round(kcal / minutes, 1),
+                'kcal_per_hour': int(round(kcal / minutes * 60)),
                 'date': s.strftime('%a %d %b %Y'),
                 'start': s.strftime('%H:%M'),
                 'end': e.strftime('%H:%M'),

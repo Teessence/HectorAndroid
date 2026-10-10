@@ -83,6 +83,8 @@
         <div class="text-end text-nowrap">
           <div class="fw-bold" style="color:#388bfd">{{ '{:,}'.format(w.steps) }} <span class="text-secondary fw-normal small">steps</span></div>
           <div class="text-secondary small">{{ '{:,}'.format(w.per_hour) }}/h · {{ w.per_min }}/min</div>
+          <div class="fw-semibold mt-1" style="color:#f78536">{{ w.kcal }} <span class="text-secondary fw-normal small">kcal</span></div>
+          <div class="text-secondary small">{{ w.kcal_per_hour }}/h · {{ w.kcal_per_min }}/min</div>
         </div>
       </div>
       {% endfor %}

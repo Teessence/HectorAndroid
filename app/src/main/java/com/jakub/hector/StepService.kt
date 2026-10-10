@@ -18,6 +18,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.SystemClock
+import android.provider.Settings
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
@@ -29,9 +30,10 @@ import java.util.concurrent.Executors
  * Reads the hardware step counter and keeps *today's* step total in Hector's
  * database up to date (source='android'), replacing the old Garmin sync.
  *
- * The hardware sensor reports steps-since-boot, so we track a per-day baseline
- * and attribute deltas to the current calendar day, handling reboots (counter
- * resets to ~0) the same way the countdown app does.
+ * The hardware sensor reports steps-since-boot. Each reading is handed to the
+ * database (mobile_steps.record_reading), which keeps the previous reading and
+ * adds the difference to today — so the database, and any backup of it, is the
+ * single source of truth for the count.
  */
 class StepService : Service(), SensorEventListener {
 
@@ -42,7 +44,6 @@ class StepService : Service(), SensorEventListener {
     private val handler = Handler(Looper.getMainLooper())
 
     private var lastPushMs = 0L
-    private var lastPushedSteps = -1L
 
     override fun onCreate() {
         super.onCreate()
@@ -67,30 +68,15 @@ class StepService : Service(), SensorEventListener {
     override fun onSensorChanged(event: SensorEvent) {
         if (event.sensor.type != Sensor.TYPE_STEP_COUNTER) return
         val raw = event.values[0].toLong()
-        val today = LocalDate.now().toString() // ISO yyyy-MM-dd
-
-        val storedDay = prefs.getString(KEY_DAY, null)
-        var dayAccum = prefs.getLong(KEY_ACCUM, 0L)
         val lastRaw = prefs.getLong(KEY_LAST_RAW, -1L)
+        prefs.edit().putLong(KEY_LAST_RAW, raw).apply()
 
-        if (storedDay != today || lastRaw < 0L) {
-            // New day (or first ever reading): start counting today from here.
-            dayAccum = 0L
-        } else {
-            val delta = if (raw >= lastRaw) raw - lastRaw else raw // reboot -> reset
-            if (delta > 0L) dayAccum += delta
-        }
+        latestRaw = raw
+        latestDay = LocalDate.now().toString() // ISO yyyy-MM-dd
+        sendReading(force = false)
 
+        // Walk detection only needs the local step-by-step difference.
         val walkDelta = if (lastRaw < 0L) 0L else if (raw >= lastRaw) raw - lastRaw else raw
-
-        prefs.edit()
-            .putString(KEY_DAY, today)
-            .putLong(KEY_ACCUM, dayAccum)
-            .putLong(KEY_LAST_RAW, raw)
-            .apply()
-
-        updateNotification(dayAccum)
-        pushToDb(today, dayAccum)
         if (walkDelta > 0L) trackWalk(eventWallTime(event), walkDelta)
     }
 
@@ -170,6 +156,8 @@ class StepService : Service(), SensorEventListener {
     override fun onDestroy() {
         sensorManager?.unregisterListener(this)
         handler.removeCallbacks(walkCheck)
+        handler.removeCallbacks(sendLater)
+        sendReading(force = true)  // queued before the executor shuts down below
         dbExecutor.shutdown()
         super.onDestroy()
     }
@@ -177,25 +165,53 @@ class StepService : Service(), SensorEventListener {
     override fun onBind(intent: Intent?): IBinder? = null
 
     // ---- DB bridge ---------------------------------------------------------
+    // The service sends the raw counter reading (steps since boot) and the
+    // database works out how many steps are new since the reading it stored
+    // last. That stored reading travels inside backups, so after uninstall →
+    // install → import the next reading picks up every step walked since the
+    // export. Readings are absolute, so a skipped or failed send loses nothing.
 
-    private fun pushToDb(today: String, steps: Long) {
+    private var latestRaw = -1L
+    private var latestDay = ""
+    private val sendLater = Runnable { sendReading(force = true) }
+
+    private fun sendReading(force: Boolean) {
+        if (latestRaw < 0L) return
         val now = System.currentTimeMillis()
-        if (steps == lastPushedSteps) return
-        if (steps != 0L && now - lastPushMs < PUSH_THROTTLE_MS) return
+        if (!force && now - lastPushMs < PUSH_THROTTLE_MS) {
+            handler.removeCallbacks(sendLater)
+            handler.postDelayed(sendLater, PUSH_THROTTLE_MS)
+            return
+        }
         lastPushMs = now
-        lastPushedSteps = steps
+        val raw = latestRaw
+        val day = latestDay
+        val boot = bootCount()
         dbExecutor.execute {
             try {
                 if (Python.isStarted()) {
-                    Python.getInstance()
+                    val total = Python.getInstance()
                         .getModule("mobile_steps")
-                        .callAttr("set_today_steps", today, steps)
+                        .callAttr("record_reading", day, raw, boot)
+                        .toLong()
+                    handler.post {
+                        prefs.edit().putString(KEY_DAY, day).putLong(KEY_ACCUM, total).apply()
+                        updateNotification(total)
+                    }
                 }
             } catch (e: Exception) {
-                // Ignore; the next sensor update will retry.
+                // Ignore; the next reading carries the same information.
             }
         }
     }
+
+    /** Increments on every reboot; tells the DB whether the counter restarted. */
+    private fun bootCount(): Int =
+        try {
+            Settings.Global.getInt(contentResolver, Settings.Global.BOOT_COUNT)
+        } catch (e: Exception) {
+            -1
+        }
 
     // ---- Notification ------------------------------------------------------
 
@@ -228,7 +244,7 @@ class StepService : Service(), SensorEventListener {
     }
 
     private fun startForegroundInternal() {
-        val steps = prefs.getLong(KEY_ACCUM, 0L)
+        val steps = if (prefs.getString(KEY_DAY, null) == LocalDate.now().toString()) prefs.getLong(KEY_ACCUM, 0L) else 0L
         val type = if (Build.VERSION.SDK_INT >= 34) {
             ServiceInfo.FOREGROUND_SERVICE_TYPE_HEALTH
         } else {
