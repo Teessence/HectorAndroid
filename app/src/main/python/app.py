@@ -192,7 +192,16 @@ def create_app():
     def index():
         import home_calc
         status = home_calc.compute_home_status(*_home_range_args())
-        return render_template('home.html', active_page='home', **status)
+        return render_template('home.html', active_page='home', focus=None, **status)
+
+    @app.route('/nutrients/<group>')
+    def nutrients_full(group):
+        """One of Home's Nutrition / Vitamins / Minerals tiles, full page."""
+        if group not in ('nutrition', 'vitamins', 'minerals'):
+            return redirect(url_for('index'))
+        import home_calc
+        status = home_calc.compute_home_status(*_home_range_args())
+        return render_template('home.html', active_page='home', focus=group, **status)
 
     @app.route('/api/home_status')
     def api_home_status():
@@ -206,7 +215,7 @@ def create_app():
         a = request.args
         if 'range' in a:
             chosen = [a.get('range', 'today'), a.get('from'), a.get('to')]
-            if request.endpoint == 'index':
+            if request.endpoint in ('index', 'nutrients_full'):
                 set_setting('home_range', json.dumps(chosen))
             return tuple(chosen)
         try:

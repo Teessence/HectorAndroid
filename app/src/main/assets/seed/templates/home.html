@@ -21,8 +21,9 @@
 ] %}
 
 {# One nutrient tile: rows sorted by % of daily target attained (desc), each on
-   its own line with a progress bar; ~3 visible then it scrolls. #}
-{% macro nutri_tile(title, icon, items, color) %}
+   its own line with a progress bar. On Home ~3 rows show and the tile scrolls;
+   the header opens the same tile full page (/nutrients/<key>). #}
+{% macro nutri_tile(key, title, icon, items, color, full=false) %}
   {% set rows = [] %}
   {% for col, label, unit in items %}
     {% set v = nutri_totals[col] if nutri_totals else 0 %}
@@ -33,8 +34,15 @@
   {% set rows = rows | sort(reverse=true) %}
   <div class="card hx-tile mb-3" style="--accent:{{ color }}">
     <div class="card-body">
-      <div class="hx-tile-label mb-2"><i class="bi {{ icon }} me-1"></i>{{ title }}</div>
-      <div class="nutri-scroll">
+      {% if full %}
+        <div class="hx-tile-label mb-2"><i class="bi {{ icon }} me-1"></i>{{ title }} · {{ rows|length }}</div>
+      {% else %}
+        <a class="hx-tile-label hx-tile-link mb-2" href="/nutrients/{{ key }}">
+          <i class="bi {{ icon }} me-1"></i>{{ title }}
+          <span class="hx-open"><i class="bi bi-arrows-angle-expand"></i></span>
+        </a>
+      {% endif %}
+      <div class="nutri-scroll{% if full %} full{% endif %}">
         {% for p, label, unit, v, t, col in rows %}
           <div class="nutri-row" data-col="{{ col }}" data-unit="{{ unit }}" data-label="{{ label }}">
             <div class="nutri-head" role="button" tabindex="0" aria-expanded="false">
@@ -52,9 +60,22 @@
   </div>
 {% endmacro %}
 
+{% set NUTRI_GROUPS = {
+  'nutrition': ('Nutrition', 'bi-pie-chart', NUTRITION, '#3fb950'),
+  'vitamins':  ('Vitamins',  'bi-capsule',   VITAMINS,  '#a371f7'),
+  'minerals':  ('Minerals',  'bi-gem',       MINERALS,  '#d29922'),
+} %}
+
 <div class="mx-auto" style="max-width:680px">
 
-  {% if missing_details %}
+  {% if focus %}
+    <div class="d-flex align-items-center gap-2 mb-3">
+      <a href="/" class="btn btn-sm btn-outline-secondary" aria-label="Back to Home"><i class="bi bi-arrow-left"></i></a>
+      <h4 class="fw-bold mb-0"><i class="bi {{ NUTRI_GROUPS[focus][1] }} me-2"></i>{{ NUTRI_GROUPS[focus][0] }}</h4>
+    </div>
+  {% endif %}
+
+  {% if missing_details and not focus %}
     <div class="card mb-3" style="border-color:#d29922">
       <div class="card-body p-4 text-center">
         <h4 class="mb-2"><i class="bi bi-person-lines-fill me-1"></i>Complete your profile</h4>
@@ -73,8 +94,9 @@
 
   {# ── Period picker ─────────────────────────────────────────────────────── #}
   {# One row: the period, then only what it needs — a tappable date for a
-     single day, the date span for a preset, two date fields for custom. #}
-  <form id="rangeForm" method="get" action="/" class="mb-3">
+     single day, the date span for a preset, two date fields for custom.
+     Choices apply straight away; there's no Show button. #}
+  <form id="rangeForm" method="get" action="{{ request.path }}" class="mb-3">
     <div class="d-flex align-items-center gap-2 flex-wrap">
       <select name="range" id="rangeSelect" class="form-select form-select-sm w-auto">
         {% for key, label in ranges %}
@@ -90,23 +112,23 @@
         <span class="text-secondary small">{{ range_label }} · {{ range_days }} days</span>
       {% endif %}
     </div>
-    <div id="customRange" class="d-flex align-items-center gap-2 mt-2" {% if range_key != 'custom' %}hidden{% endif %}>
+    <div id="customRange" class="align-items-center gap-2 mt-2 {{ 'd-flex' if range_key == 'custom' else 'd-none' }}">
       <input type="date" name="from" class="form-control form-control-sm" value="{{ range_from }}" max="{{ today_date }}"
-             {% if range_key != 'custom' %}disabled{% endif %}>
+             aria-label="From" {% if range_key != 'custom' %}disabled{% endif %}>
       <span class="text-secondary">–</span>
       <input type="date" name="to" class="form-control form-control-sm" value="{{ range_to }}" max="{{ today_date }}"
-             {% if range_key != 'custom' %}disabled{% endif %}>
-      <button type="submit" class="btn btn-sm btn-primary">Show</button>
+             aria-label="To" {% if range_key != 'custom' %}disabled{% endif %}>
     </div>
     {% if range_days > 1 %}
     <div class="hx-sub">Targets are daily × {{ range_days }}.</div>
     {% endif %}
   </form>
 
+  {% if not focus %}
   {# ── Steps tile ────────────────────────────────────────────────────────── #}
   <div class="card hx-tile mb-3" style="--accent:#388bfd">
     <div class="card-body">
-      <span class="hx-tile-label"><i class="bi bi-person-walking me-1"></i>Steps</span>
+      <a class="hx-tile-label hx-tile-link" href="/steps"><i class="bi bi-person-walking me-1"></i>Steps<i class="bi bi-chevron-right hx-open"></i></a>
       {% if steps_required is not none %}
         <div class="hx-basis">From today's weight · {{ morning_weight }} kg this morning → {{ target_weight }} kg goal</div>
         <div class="d-flex justify-content-between align-items-baseline">
@@ -138,7 +160,7 @@
   <div class="card hx-tile mb-3" style="--accent:#f78536">
     <div class="card-body">
       <div class="d-flex justify-content-between align-items-center">
-        <span class="hx-tile-label"><i class="bi bi-fire me-1"></i>Calories</span>
+        <a class="hx-tile-label hx-tile-link" href="/diary{% if range_days == 1 %}/{{ range_to }}{% endif %}"><i class="bi bi-fire me-1"></i>Calories<i class="bi bi-chevron-right hx-open"></i></a>
         {% if calorie_diff is not none %}
         <span id="calorie_diff" class="hx-sub mt-0 fw-semibold" style="color:{{ '#f85149' if over else '#3fb950' }}">{{ '{:,}'.format(calorie_diff|abs) }} {{ 'over' if over else 'under' }}</span>
         {% endif %}
@@ -156,7 +178,7 @@
   {% set hyd_pct = (hydration_ml / hydration_target * 100) if hydration_target else 0 %}
   <div class="card hx-tile mb-3" style="--accent:#2ea6a0">
     <div class="card-body">
-      <span class="hx-tile-label"><i class="bi bi-droplet-half me-1"></i>Hydration</span>
+      <a class="hx-tile-label hx-tile-link" href="/hydration"><i class="bi bi-droplet-half me-1"></i>Hydration<i class="bi bi-chevron-right hx-open"></i></a>
       <div class="hx-big mt-1">
         <span id="hydration_ml">{{ '{:,}'.format(hydration_ml) }}</span>
         <span class="hx-of">/ <span id="hydration_target">{{ '{:,}'.format(hydration_target) }}</span> ml</span>
@@ -164,11 +186,15 @@
       <div class="hx-bar"><i id="hyd_bar" style="width:{{ [hyd_pct, 100]|min }}%"></i></div>
     </div>
   </div>
+  {% endif %}
 
   {# ── Nutrition / Vitamins / Minerals tiles ─────────────────────────────── #}
-  {{ nutri_tile('Nutrition', 'bi-pie-chart', NUTRITION, '#3fb950') }}
-  {{ nutri_tile('Vitamins',  'bi-capsule',   VITAMINS,   '#a371f7') }}
-  {{ nutri_tile('Minerals',  'bi-gem',       MINERALS,   '#d29922') }}
+  {% for key in ['nutrition', 'vitamins', 'minerals'] %}
+    {% if not focus or focus == key %}
+      {% set g = NUTRI_GROUPS[key] %}
+      {{ nutri_tile(key, g[0], g[1], g[2], g[3], full=(focus == key)) }}
+    {% endif %}
+  {% endfor %}
 
 </div>
 {% endblock %}
@@ -192,8 +218,13 @@
   .nutri-scroll { max-height: 112px; overflow-y: auto; }
   .nutri-row { margin-bottom: .55rem; }
   .nutri-row:last-child { margin-bottom: 0; }
-  /* Expanding a row lifts the 3-row scroll cap so the detail can be read. */
-  .nutri-scroll.has-open { max-height: none; }
+  /* Expanding a row lifts the 3-row scroll cap so the detail can be read;
+     the full-page view never caps it. */
+  .nutri-scroll.has-open, .nutri-scroll.full { max-height: none; }
+  /* Tile headers are links to the matching page. */
+  .hx-tile-link { display: inline-flex; align-items: center; gap: .1rem; text-decoration: none; padding: .15rem 0; }
+  .hx-tile-link:hover, .hx-tile-link:active { color: var(--accent); }
+  .hx-open { font-size: .7rem; margin-left: .35rem; opacity: .7; }
   .nutri-head { cursor: pointer; user-select: none; }
   .nutri-chev { font-size: .7rem; margin-right: .3rem; display: inline-block; transition: transform .15s; }
   .nutri-row.open .nutri-chev { transform: rotate(90deg); }
@@ -232,29 +263,40 @@
   }
 
   // ── Period picker ──────────────────────────────────────────────────────────
-  // Presets apply immediately; "Custom range" reveals the date inputs.
+  // Everything applies as soon as it's chosen: presets on select, a single day
+  // from the calendar, a custom range once its dates are picked.
   var rangeForm = document.getElementById('rangeForm');
   var rangeSelect = document.getElementById('rangeSelect');
   var customRange = document.getElementById('customRange');
+  var customInputs = customRange ? customRange.querySelectorAll('input') : [];
   var dayPicker = document.getElementById('dayPicker');
-  function showDay(d) { location.href = '/?range=day&from=' + encodeURIComponent(d); }
+  function showDay(d) { location.href = location.pathname + '?range=day&from=' + encodeURIComponent(d); }
   if (rangeSelect) {
     rangeSelect.addEventListener('change', function () {
       var v = rangeSelect.value;
       var custom = v === 'custom';
-      customRange.hidden = !custom;
-      customRange.querySelectorAll('input').forEach(function (i) { i.disabled = !custom; });
+      customRange.classList.toggle('d-flex', custom);
+      customRange.classList.toggle('d-none', !custom);
+      customInputs.forEach(function (i) { i.disabled = !custom; });
       if (v === 'day') {
         // Open the calendar straight away when one is on screen.
         if (dayPicker && typeof dayPicker.showPicker === 'function') {
           try { dayPicker.showPicker(); return; } catch (e) {}
         }
         showDay(dayPicker ? dayPicker.value : '{{ today_date }}');
-      } else if (!custom) {
+      } else if (custom) {
+        // Start from the period being shown; the user adjusts either end.
+        try { customInputs[0].showPicker(); } catch (e) {}
+      } else {
         rangeForm.submit();
       }
     });
   }
+  customInputs.forEach(function (i) {
+    i.addEventListener('change', function () {
+      if (customInputs[0].value && customInputs[1].value) rangeForm.submit();
+    });
+  });
   if (dayPicker) {
     dayPicker.addEventListener('change', function () { if (dayPicker.value) showDay(dayPicker.value); });
   }

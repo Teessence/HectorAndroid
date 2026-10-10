@@ -133,8 +133,11 @@
       opacity: 0; pointer-events: none; transition: opacity .2s;
     }
     #hx-nav-backdrop.show { opacity: 1; pointer-events: auto; }
+    /* The open menu scrolls if it's taller than the screen. Its max-height is
+       set from JS (window.innerHeight): vh/dvh units can resolve to ~0 in the
+       Android WebView, which collapsed the menu to nothing. */
     @media (max-width: 991.98px) {
-      .navbar-collapse { max-height: calc(100dvh - 58px); overflow-y: auto; }
+      .navbar-collapse { overflow-y: auto; }
     }
 
     /* Mobile fix: the list pages wrap their tables in a scroll box with a fixed
@@ -247,7 +250,12 @@
   var backdrop = document.getElementById('hx-nav-backdrop');
   if (!nav || !backdrop) return;
   var collapse = bootstrap.Collapse.getOrCreateInstance(nav, { toggle: false });
-  nav.addEventListener('show.bs.collapse', function () { backdrop.classList.add('show'); });
+  nav.addEventListener('show.bs.collapse', function () {
+    var bar = nav.closest('.navbar');
+    var room = window.innerHeight - (bar ? bar.getBoundingClientRect().height : 58);
+    nav.style.maxHeight = room > 200 ? room + 'px' : '';
+    backdrop.classList.add('show');
+  });
   nav.addEventListener('hide.bs.collapse', function () { backdrop.classList.remove('show'); });
   backdrop.addEventListener('click', function () { collapse.hide(); });
   document.addEventListener('keydown', function (e) {
