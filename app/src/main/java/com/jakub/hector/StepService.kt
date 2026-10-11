@@ -24,6 +24,7 @@ import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import com.chaquo.python.Python
 import java.time.LocalDate
+import java.util.TimeZone
 import java.util.concurrent.Executors
 
 /**
@@ -34,6 +35,10 @@ import java.util.concurrent.Executors
  * database (mobile_steps.record_reading), which keeps the previous reading and
  * adds the difference to today — so the database, and any backup of it, is the
  * single source of truth for the count.
+ *
+ * Alongside, steps are tallied per minute of the day they were taken in. The
+ * app builds walks from those minutes using the user's walk settings, so the
+ * walk rules can change at any time and past walks regroup accordingly.
  */
 class StepService : Service(), SensorEventListener {
 
@@ -48,6 +53,9 @@ class StepService : Service(), SensorEventListener {
     override fun onCreate() {
         super.onCreate()
         prefs = getSharedPreferences("hector_steps", Context.MODE_PRIVATE)
+        // Leftovers from the old in-service walk detection.
+        prefs.edit().remove("walk_start").remove("walk_last").remove("walk_steps").apply()
+        loadPendingMinutes()
         createChannel()
         startForegroundInternal()
 
@@ -56,8 +64,6 @@ class StepService : Service(), SensorEventListener {
         stepSensor?.let { sensor ->
             sensorManager?.registerListener(this, sensor, SensorManager.SENSOR_DELAY_NORMAL)
         }
-        // Close out a walk left open if the service was restarted mid-walk.
-        handler.post(walkCheck)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -71,91 +77,33 @@ class StepService : Service(), SensorEventListener {
         val lastRaw = prefs.getLong(KEY_LAST_RAW, -1L)
         prefs.edit().putLong(KEY_LAST_RAW, raw).apply()
 
+        // Steps since the previous reading, filed under the minute they happened.
+        val delta = if (lastRaw < 0L) 0L else if (raw >= lastRaw) raw - lastRaw else raw
+        if (delta > 0L) {
+            val at = eventWallTime(event)
+            val minute = (at + TimeZone.getDefault().getOffset(at)) / 60_000L  // local-time minute
+            pendingMinutes[minute] = (pendingMinutes[minute] ?: 0L) + delta
+            lastStepMs = maxOf(lastStepMs, at)
+            savePendingMinutes()
+        }
+
         latestRaw = raw
         latestDay = LocalDate.now().toString() // ISO yyyy-MM-dd
         sendReading(force = false)
-
-        // Walk detection only needs the local step-by-step difference.
-        val walkDelta = if (lastRaw < 0L) 0L else if (raw >= lastRaw) raw - lastRaw else raw
-        if (walkDelta > 0L) trackWalk(eventWallTime(event), walkDelta)
     }
-
-    // ---- Walk detection ----------------------------------------------------
-    // A walk is a run of steps with no pause longer than WALK_GAP_MS. Once it
-    // ends, it's logged if it lasted at least WALK_MIN_MS with a real walking
-    // pace. This sits on top of the daily count and never changes it.
 
     /** Sensor timestamps are nanos since boot; convert to wall-clock millis so
      *  batched (delayed) events still land at the time the steps happened. */
     private fun eventWallTime(event: SensorEvent): Long {
         val now = System.currentTimeMillis()
         val ageMs = (SystemClock.elapsedRealtimeNanos() - event.timestamp) / 1_000_000L
-        return if (ageMs in 0L..WALK_GAP_MS * 30) now - ageMs else now
-    }
-
-    private fun trackWalk(at: Long, steps: Long) {
-        val start = prefs.getLong(KEY_WALK_START, 0L)
-        val last = prefs.getLong(KEY_WALK_LAST, 0L)
-        if (start == 0L || at - last > WALK_GAP_MS) {
-            finishWalk()
-            prefs.edit()
-                .putLong(KEY_WALK_START, at)
-                .putLong(KEY_WALK_LAST, at)
-                .putLong(KEY_WALK_STEPS, steps)
-                .apply()
-        } else {
-            prefs.edit()
-                .putLong(KEY_WALK_LAST, maxOf(last, at))
-                .putLong(KEY_WALK_STEPS, prefs.getLong(KEY_WALK_STEPS, 0L) + steps)
-                .apply()
-        }
-        scheduleWalkCheck()
-    }
-
-    /** Close the current walk (if any) and log it when it qualifies. */
-    private fun finishWalk() {
-        val start = prefs.getLong(KEY_WALK_START, 0L)
-        if (start == 0L) return
-        val end = prefs.getLong(KEY_WALK_LAST, start)
-        val steps = prefs.getLong(KEY_WALK_STEPS, 0L)
-        prefs.edit().remove(KEY_WALK_START).remove(KEY_WALK_LAST).remove(KEY_WALK_STEPS).apply()
-        val minutes = (end - start) / 60_000.0
-        if (end - start >= WALK_MIN_MS && steps / minutes >= WALK_MIN_PACE) {
-            logWalk(start, end, steps)
-        }
-    }
-
-    private val walkCheck = Runnable {
-        val last = prefs.getLong(KEY_WALK_LAST, 0L)
-        if (last != 0L && System.currentTimeMillis() - last > WALK_GAP_MS) finishWalk()
-        else if (last != 0L) scheduleWalkCheck()
-    }
-
-    private fun scheduleWalkCheck() {
-        handler.removeCallbacks(walkCheck)
-        handler.postDelayed(walkCheck, WALK_GAP_MS + 5_000L)
-    }
-
-    private fun logWalk(start: Long, end: Long, steps: Long) {
-        val fmt = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US)
-        val s = fmt.format(java.util.Date(start))
-        val e = fmt.format(java.util.Date(end))
-        dbExecutor.execute {
-            try {
-                if (Python.isStarted()) {
-                    Python.getInstance().getModule("mobile_steps").callAttr("log_walk", s, e, steps)
-                }
-            } catch (ex: Exception) {
-                // A lost walk entry is not worth crashing the counter over.
-            }
-        }
+        return if (ageMs in 0L..MAX_EVENT_AGE_MS) now - ageMs else now
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
 
     override fun onDestroy() {
         sensorManager?.unregisterListener(this)
-        handler.removeCallbacks(walkCheck)
         handler.removeCallbacks(sendLater)
         sendReading(force = true)  // queued before the executor shuts down below
         dbExecutor.shutdown()
@@ -164,12 +112,40 @@ class StepService : Service(), SensorEventListener {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    // ---- Per-minute step log -------------------------------------------------
+    // Minutes not yet saved to the database, as local-time minute -> steps.
+    // Kept in prefs too, so a restart before the next save loses nothing.
+
+    private val pendingMinutes = mutableMapOf<Long, Long>()
+    private var lastStepMs = 0L
+
+    private fun loadPendingMinutes() {
+        pendingMinutes.clear()
+        prefs.getString(KEY_PENDING_MINUTES, "")!!.split(',').forEach { pair ->
+            val parts = pair.split(':')
+            if (parts.size == 2) {
+                val m = parts[0].toLongOrNull()
+                val s = parts[1].toLongOrNull()
+                if (m != null && s != null && s > 0) pendingMinutes[m] = s
+            }
+        }
+        lastStepMs = prefs.getLong(KEY_LAST_STEP_MS, 0L)
+    }
+
+    private fun savePendingMinutes() {
+        prefs.edit()
+            .putString(KEY_PENDING_MINUTES, pendingMinutes.entries.joinToString(",") { "${it.key}:${it.value}" })
+            .putLong(KEY_LAST_STEP_MS, lastStepMs)
+            .apply()
+    }
+
     // ---- DB bridge ---------------------------------------------------------
     // The service sends the raw counter reading (steps since boot) and the
     // database works out how many steps are new since the reading it stored
     // last. That stored reading travels inside backups, so after uninstall →
     // install → import the next reading picks up every step walked since the
     // export. Readings are absolute, so a skipped or failed send loses nothing.
+    // The per-minute tallies ride along and are cleared only once saved.
 
     private var latestRaw = -1L
     private var latestDay = ""
@@ -187,14 +163,23 @@ class StepService : Service(), SensorEventListener {
         val raw = latestRaw
         val day = latestDay
         val boot = bootCount()
+        val minutes = pendingMinutes.toMap()
+        val minutesArg = minutes.entries.joinToString(",") { "${it.key}:${it.value}" }
+        val lastStep = lastStepMs
         dbExecutor.execute {
             try {
                 if (Python.isStarted()) {
                     val total = Python.getInstance()
                         .getModule("mobile_steps")
-                        .callAttr("record_reading", day, raw, boot)
+                        .callAttr("record_reading", day, raw, boot, minutesArg, lastStep)
                         .toLong()
                     handler.post {
+                        // Drop exactly what was saved; steps added meanwhile stay pending.
+                        minutes.forEach { (m, s) ->
+                            val left = (pendingMinutes[m] ?: 0L) - s
+                            if (left > 0L) pendingMinutes[m] = left else pendingMinutes.remove(m)
+                        }
+                        savePendingMinutes()
                         prefs.edit().putString(KEY_DAY, day).putLong(KEY_ACCUM, total).apply()
                         updateNotification(total)
                     }
@@ -266,15 +251,12 @@ class StepService : Service(), SensorEventListener {
         private const val CHANNEL_ID = "hector_steps"
         private const val NOTIF_ID = 1
         private const val PUSH_THROTTLE_MS = 5000L
+        private const val MAX_EVENT_AGE_MS = 60 * 60_000L  // older event timestamps aren't trusted
         private const val KEY_DAY = "day"
         private const val KEY_ACCUM = "day_accum"
         private const val KEY_LAST_RAW = "last_raw"
-        private const val KEY_WALK_START = "walk_start"
-        private const val KEY_WALK_LAST = "walk_last"
-        private const val KEY_WALK_STEPS = "walk_steps"
-        private const val WALK_GAP_MS = 2 * 60_000L      // a pause longer than this ends a walk
-        private const val WALK_MIN_MS = 5 * 60_000L      // shortest walk worth logging
-        private const val WALK_MIN_PACE = 40.0           // steps/min; filters pottering about
+        private const val KEY_PENDING_MINUTES = "pending_minutes"
+        private const val KEY_LAST_STEP_MS = "last_step_ms"
 
         fun start(context: Context) {
             ContextCompat.startForegroundService(

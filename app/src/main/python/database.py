@@ -261,7 +261,8 @@ def init_db():
              WHERE ingredient_id = NEW.id;
         END;
 
-        -- Continuous walks of 5+ minutes detected by the phone's step counter.
+        -- Old format: finished walks only. Kept so older backups still import;
+        -- converted into step_minutes below.
         CREATE TABLE IF NOT EXISTS walking_sessions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             start_at TEXT NOT NULL,
@@ -270,8 +271,40 @@ def init_db():
             UNIQUE(start_at)
         );
         CREATE INDEX IF NOT EXISTS idx_walks_start ON walking_sessions(start_at);
+
+        -- Steps per minute from the phone's counter. `minute` is minutes since
+        -- 1970-01-01 00:00 in *local* time. Walks are built from these using
+        -- the user's walk settings (see walks.py).
+        CREATE TABLE IF NOT EXISTS step_minutes (
+            minute INTEGER PRIMARY KEY,
+            steps  INTEGER NOT NULL
+        );
     ''')
     conn.commit()
+
+    # One-off: turn walks saved in the old format into minutes, spreading each
+    # walk's steps evenly over its duration (the old format kept no detail).
+    has_minutes = conn.execute('SELECT 1 FROM step_minutes LIMIT 1').fetchone()
+    if not has_minutes:
+        epoch = datetime(1970, 1, 1)
+        for r in conn.execute('SELECT start_at, end_at, steps FROM walking_sessions').fetchall():
+            try:
+                s = datetime.strptime(r['start_at'], '%Y-%m-%d %H:%M:%S')
+                e = datetime.strptime(r['end_at'], '%Y-%m-%d %H:%M:%S')
+            except (TypeError, ValueError):
+                continue
+            first = int((s - epoch).total_seconds() // 60)
+            last = max(first, int((e - epoch).total_seconds() // 60))
+            count = last - first + 1
+            base, extra = divmod(int(r['steps'] or 0), count)
+            for i in range(count):
+                n = base + (1 if i < extra else 0)
+                if n > 0:
+                    conn.execute(
+                        'INSERT INTO step_minutes(minute, steps) VALUES (?, ?) '
+                        'ON CONFLICT(minute) DO UPDATE SET steps = steps + excluded.steps',
+                        (first + i, n))
+        conn.commit()
     conn.close()
 
 

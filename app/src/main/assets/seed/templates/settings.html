@@ -252,6 +252,25 @@
 
 {# ──────────────────────────── STEP RATES ────────────────────────────── #}
 <div class="tab-pane fade" id="set-steprates" role="tabpanel">
+  <div class="card mb-3" id="walk-settings">
+    <div class="card-body p-3">
+      <h6 class="text-secondary text-uppercase mb-2" style="font-size:.72rem;letter-spacing:.1em">
+        <i class="bi bi-signpost-split me-1"></i>Walks
+      </h6>
+      <p class="text-secondary mb-3" style="font-size:.85rem">
+        How Steps → Walks groups your steps. Changes apply to all walks, past ones included.
+      </p>
+      <div class="row g-3">
+        {% for key, label, value, lowest in walk_fields %}
+        <div class="col-md-4">
+          <label class="form-label fw-semibold small" for="{{ key }}">{{ label }}</label>
+          <input type="number" class="form-control" id="{{ key }}" name="{{ key }}" form="settings-form"
+                 min="{{ lowest }}" step="1" value="{{ '%g'|format(value) }}">
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
   <div class="card">
     <div class="card-body p-3">
       <h6 class="text-secondary text-uppercase mb-3" style="font-size:.72rem;letter-spacing:.1em">

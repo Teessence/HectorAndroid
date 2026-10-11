@@ -8,23 +8,42 @@ import json
 from datetime import datetime
 
 
-def log_walk(start_at, end_at, steps):
-    """Record a continuous walk ('YYYY-MM-DD HH:MM:SS' bounds) detected by the
-    step service. Purely a log — daily step totals are untouched."""
-    from database import get_db
+LAST_STEP_KEY = 'walk_last_step_ms'
+_schema_ready = False
+
+
+def _ensure_schema():
+    """The step service can run before the app's UI has started Flask (e.g.
+    right after a reboot), so make sure the tables exist. Idempotent."""
+    global _schema_ready
+    if not _schema_ready:
+        from database import init_db
+        init_db()
+        _schema_ready = True
+
+
+def _save_minutes(conn, minutes, last_step_ms):
+    """minutes: 'minute:steps,minute:steps' (local-time minutes since 1970)."""
+    for pair in (minutes or '').split(','):
+        m, _, s = pair.partition(':')
+        try:
+            m, s = int(m), int(s)
+        except ValueError:
+            continue
+        if s > 0:
+            conn.execute(
+                'INSERT INTO step_minutes(minute, steps) VALUES (?, ?) '
+                'ON CONFLICT(minute) DO UPDATE SET steps = steps + excluded.steps',
+                (m, s))
     try:
-        steps = int(steps)
+        last_step_ms = int(last_step_ms or 0)
     except (TypeError, ValueError):
-        return False
-    conn = get_db()
-    try:
-        conn.execute(
-            'INSERT OR REPLACE INTO walking_sessions(start_at, end_at, steps) VALUES (?, ?, ?)',
-            (str(start_at), str(end_at), steps))
-        conn.commit()
-        return True
-    finally:
-        conn.close()
+        last_step_ms = 0
+    if last_step_ms > 0:
+        row = conn.execute('SELECT value FROM settings WHERE key=?', (LAST_STEP_KEY,)).fetchone()
+        if not row or int(float(row['value'] or 0)) < last_step_ms:
+            conn.execute('INSERT OR REPLACE INTO settings(key, value) VALUES (?, ?)',
+                         (LAST_STEP_KEY, str(last_step_ms)))
 
 
 # The last raw counter reading is stored *in the database* (settings table), so
@@ -36,11 +55,14 @@ CONTINUITY_S = 30 * 60      # a reading from yesterday this recent still counts
 MAX_DELTA = 100_000         # sanity cap for one update
 
 
-def record_reading(date_str, raw, boot):
+def record_reading(date_str, raw, boot, minutes='', last_step_ms=0):
     """Take a raw step-counter reading (steps since boot) for date_str
     (YYYY-MM-DD) and add the steps walked since the previous reading to that
     day. Returns the day's total. A number typed in by hand (source='manual')
-    is kept as the starting point and new steps are added to it."""
+    is kept as the starting point and new steps are added to it.
+
+    minutes / last_step_ms carry the per-minute step log used to build walks;
+    they're saved in the same transaction."""
     # Imported lazily so mobile_main.configure() has already set the DB path.
     from database import get_db
     try:
@@ -48,9 +70,12 @@ def record_reading(date_str, raw, boot):
     except (TypeError, ValueError):
         return 0
     now = datetime.now()
+    _ensure_schema()
 
     conn = get_db()
     try:
+        _save_minutes(conn, minutes, last_step_ms)
+
         row = conn.execute('SELECT value FROM settings WHERE key=?', (SENSOR_STATE_KEY,)).fetchone()
         try:
             prev = json.loads(row['value']) if row and row['value'] else None

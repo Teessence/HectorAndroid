@@ -66,8 +66,11 @@
 </div>
 </div>{# /steps-days #}
 
-{# Walks: continuous walking of 5+ minutes, logged automatically by the phone. #}
+{# Walks: built from the per-minute step log with the rules in Settings → Step Rates. #}
 <div class="tab-pane fade" id="steps-walks" role="tabpanel">
+  {# Live card for the walk in progress — filled in by the script below. #}
+  <div id="activeWalk" class="card mb-3 active-walk" hidden></div>
+
   {% if walks %}
   <div class="card">
     <div class="list-group list-group-flush">
@@ -91,15 +94,18 @@
     </div>
   </div>
   {% else %}
-  <div class="text-center text-secondary py-5">
+  <div class="text-center text-secondary py-5" id="noWalks">
     <i class="bi bi-signpost-split" style="font-size:2.5rem;opacity:.35"></i>
     <p class="mt-2 mb-0">No walks yet.</p>
-    <p class="small">Walk for 5 minutes or more with your phone and it shows up here.</p>
+    <p class="small">Walk for {{ '%g'|format(walk_cfg.walk_min_minutes) }} minutes or more with your phone and it shows up here.</p>
   </div>
   {% endif %}
   <div class="text-secondary mt-2" style="font-size:.8rem">
-    A walk is continuous walking of at least 5 minutes; pauses over 2 minutes end it.
-    Your daily step totals don't change — this is an extra log.
+    A walk is at least <strong>{{ '%g'|format(walk_cfg.walk_min_minutes) }} min</strong> of walking at
+    <strong>{{ '%g'|format(walk_cfg.walk_min_pace) }}+ steps/min</strong>; a pause longer than
+    <strong>{{ '%g'|format(walk_cfg.walk_gap_minutes) }} min</strong> ends it.
+    You can change these in <a href="/settings?tab=steprates#walk-settings">Settings → Step Rates</a> —
+    past walks regroup to match. Your daily step totals don't change; this is an extra log.
   </div>
 </div>
 </div>{# /tab-content #}
@@ -107,6 +113,106 @@
 {% endblock %}
 
 {% block scripts %}
+<style>
+  .active-walk { border: 1px solid rgba(63,185,80,.55); background: rgba(63,185,80,.06); }
+  .walk-badge {
+    display: inline-flex; align-items: center; gap: .35rem;
+    background: #238636; color: #fff; border-radius: 99px;
+    padding: .15rem .6rem; font-size: .72rem; font-weight: 600;
+  }
+  .walk-badge::before {
+    content: ''; width: .5rem; height: .5rem; border-radius: 50%; background: #aff5b4;
+    animation: walk-pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes walk-pulse { 50% { opacity: .25; } }
+  .walk-ends.soon { color: #d29922; font-weight: 600; }
+</style>
+<script>
+// ── Active walk ───────────────────────────────────────────────────────────────
+// Shows the walk in progress with the same stats as finished walks, and when it
+// will end if you stop moving. Re-reads the server every 15 s; when the walk
+// ends the page reloads so it moves into the list.
+(function () {
+  var box = document.getElementById('activeWalk');
+  if (!box) return;
+  var walk = {{ active_walk | tojson }};
+  var settings = {{ walk_cfg | tojson }};
+  var serverOffset = 0;  // phone clock vs server clock, in ms
+
+  function fmt(n) { return Number(n).toLocaleString(); }
+  function clock(ms) { return new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
+  function mmss(ms) {
+    var s = Math.max(0, Math.round(ms / 1000));
+    return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+  }
+
+  function render() {
+    if (!walk) { box.hidden = true; return; }
+    box.hidden = false;
+    var note = walk.qualifies
+      ? 'Counts as a walk.'
+      : (walk.minutes_to_go > 0
+          ? 'Counts as a walk after ' + walk.minutes_to_go + ' more min.'
+          : 'Below ' + settings.walk_min_pace + ' steps/min so far — pick up the pace to count it.');
+    box.innerHTML =
+      '<div class="card-body p-3">' +
+        '<div class="d-flex justify-content-between align-items-start gap-3">' +
+          '<div style="min-width:0">' +
+            '<span class="walk-badge">Active walk</span>' +
+            '<div class="fw-semibold mt-2">Started ' + walk.start + ' · ' + walk.minutes + ' min</div>' +
+            '<div class="small walk-ends" id="walkEnds"></div>' +
+            '<div class="text-secondary small mt-1">' + note + '</div>' +
+          '</div>' +
+          '<div class="text-end text-nowrap">' +
+            '<div class="fw-bold" style="color:#388bfd">' + fmt(walk.steps) + ' <span class="text-secondary fw-normal small">steps</span></div>' +
+            '<div class="text-secondary small">' + fmt(walk.per_hour) + '/h · ' + walk.per_min + '/min</div>' +
+            '<div class="fw-semibold mt-1" style="color:#f78536">' + walk.kcal + ' <span class="text-secondary fw-normal small">kcal</span></div>' +
+            '<div class="text-secondary small">' + walk.kcal_per_hour + '/h · ' + walk.kcal_per_min + '/min</div>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    tick();
+  }
+
+  function tick() {
+    if (!walk) return;
+    var left = walk.ends_at_ms - (Date.now() + serverOffset);
+    var el = document.getElementById('walkEnds');
+    // Time's up on this side: let the server confirm (at most every 5 s)
+    // rather than reloading on a clock that may be slightly off.
+    if (left <= 0) {
+      if (Date.now() - lastRefresh > 5000) refresh();
+      return;
+    }
+    if (el) {
+      el.textContent = 'Ends at ' + clock(walk.ends_at_ms) + ' if you stop (' + mmss(left) + ' left) — keep moving to extend it.';
+      el.classList.toggle('soon', left < 30000);
+    }
+  }
+
+  var lastRefresh = 0;
+  async function refresh() {
+    lastRefresh = Date.now();
+    try {
+      var r = await fetch('/api/walks/active', { cache: 'no-store' });
+      if (!r.ok) return;
+      var d = await r.json();
+      serverOffset = d.now_ms - Date.now();
+      var wasActive = !!walk;
+      walk = d.active;
+      settings = d.settings;
+      // A walk that just finished belongs in the list below: reload to show it.
+      if (wasActive && !walk) { location.reload(); return; }
+      render();
+    } catch (e) { /* keep showing the last known state */ }
+  }
+
+  render();
+  refresh();  // sync the clock straight away
+  setInterval(tick, 1000);
+  setInterval(refresh, 15000);
+})();
+</script>
 <script>
 // Remember whether Days or Walks was open.
 (function () {

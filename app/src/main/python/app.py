@@ -295,6 +295,15 @@ def create_app():
                 v = request.form.get(key, '').strip()
                 if v:
                     set_setting(key, v)
+            # Walk rules (Step Rates tab): numbers at or above each minimum.
+            import walks as walks_mod
+            for key, _, _, lowest in walks_mod.WALK_SETTINGS:
+                raw = request.form.get(key, '').strip()
+                try:
+                    if raw and float(raw) >= lowest:
+                        set_setting(key, raw)
+                except ValueError:
+                    pass
             # Garmin: email + refresh interval saved if present;
             # password only overwritten when a non-empty value is submitted
             # (so users can re-save settings without retyping it).
@@ -309,12 +318,17 @@ def create_app():
             return redirect(url_for('settings'))
         s = {k: get_setting(k, '') for k in profile_keys}
         targets = {k: get_setting(k, TARGET_DEFAULTS.get(k, '')) for k in TARGET_KEYS}
+        import walks as walks_mod
+        walk_cfg = walks_mod.get_walk_settings()
+        walk_fields = [(key, label, walk_cfg[key], lowest)
+                       for key, label, _, lowest in walks_mod.WALK_SETTINGS]
         return render_template('settings.html', s=s, targets=targets,
                                auto_calories=compute_calorie_target(),
                                calorie_deficit=get_calorie_deficit(),
                                garmin_status=garmin.get_status(),
                                last_backup_at=get_setting('last_backup_at'),
                                ai_key=get_setting('anthropic_api_key') or '',
+                               walk_fields=walk_fields,
                                active_page='settings')
 
     @app.route('/settings/display', methods=['POST'])
@@ -1339,47 +1353,23 @@ def create_app():
             html = render_template('_steps_rows.html', entries=page_entries)
             return jsonify({'html': html, 'has_more': has_more, 'page': page})
 
+        import walks as walks_mod
+        active_walk, walk_list, walk_cfg = walks_mod.get_walks()
+        for w in walk_list:
+            w['relative'] = format_relative_time(w['start_at'])
         return render_template('steps_index.html', entries=page_entries,
                                today=today_str, page=page, has_more=has_more,
                                garmin_status=garmin.get_status(),
-                               walks=_recent_walks(),
+                               walks=walk_list, active_walk=active_walk, walk_cfg=walk_cfg,
                                active_page='steps')
 
-    def _recent_walks(limit=200):
-        """Logged walks, newest first, with duration and pace worked out."""
-        conn = get_db()
-        rows = conn.execute(
-            'SELECT start_at, end_at, steps FROM walking_sessions ORDER BY start_at DESC LIMIT ?',
-            (limit,)).fetchall()
-        conn.close()
-        out = []
-        weights = {}  # date -> weight that day (one lookup per day)
-        for r in rows:
-            try:
-                s = datetime.strptime(r['start_at'], '%Y-%m-%d %H:%M:%S')
-                e = datetime.strptime(r['end_at'], '%Y-%m-%d %H:%M:%S')
-            except ValueError:
-                continue
-            minutes = max(1.0, (e - s).total_seconds() / 60)
-            day = r['start_at'][:10]
-            if day not in weights:
-                weights[day] = get_current_weight(day)
-            # Same calories-per-step table as the rest of Hector, at that day's weight.
-            kcal = r['steps'] * calories_per_step(weights[day])
-            out.append({
-                'kcal': int(round(kcal)),
-                'kcal_per_min': round(kcal / minutes, 1),
-                'kcal_per_hour': int(round(kcal / minutes * 60)),
-                'date': s.strftime('%a %d %b %Y'),
-                'start': s.strftime('%H:%M'),
-                'end': e.strftime('%H:%M'),
-                'minutes': int(round(minutes)),
-                'steps': r['steps'],
-                'per_min': int(round(r['steps'] / minutes)),
-                'per_hour': int(round(r['steps'] / minutes * 60)),
-                'relative': format_relative_time(r['start_at']),
-            })
-        return out
+    @app.route('/api/walks/active')
+    def api_active_walk():
+        """The walk in progress (or null), for the live card on Steps → Walks."""
+        import walks as walks_mod
+        active_walk, _, walk_cfg = walks_mod.get_walks(limit=0)
+        return jsonify({'active': active_walk, 'settings': walk_cfg,
+                        'now_ms': int(datetime.now().timestamp() * 1000)})
 
     @app.route('/steps/<date_str>', methods=['GET', 'POST'])
     def steps_day(date_str):
