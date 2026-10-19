@@ -1,0 +1,95 @@
+{% extends 'base.html' %}
+{% block title %}{{ cat.name }} — Categories — Hector{% endblock %}
+{% block content %}
+<div class="mx-auto" style="max-width:680px">
+
+  <div class="d-flex align-items-center gap-2 mb-3">
+    <a href="/categories" class="btn btn-sm btn-outline-secondary" aria-label="Back to Categories"><i class="bi bi-arrow-left"></i></a>
+    <h4 class="fw-bold mb-0 text-truncate"><i class="bi bi-tag me-2"></i>{{ cat.name }}</h4>
+  </div>
+
+  {# Delete lives in its own form so it can't be submitted with Save. #}
+  <form id="deleteForm" method="post" action="/categories/{{ cat.id }}/delete"
+        data-confirm="Delete the category “{{ cat.name }}”? Its ingredients are kept."
+        onsubmit="return confirm(this.dataset.confirm);"></form>
+
+  <form method="post" id="catForm">
+    <label class="form-label fw-semibold" for="catName">Name</label>
+    <input type="text" id="catName" name="name" class="form-control mb-3" value="{{ cat.name }}" maxlength="60" required>
+
+    <div class="d-flex align-items-center justify-content-between mb-2 gap-2">
+      <span class="fw-semibold">Ingredients <span class="text-secondary fw-normal small" id="pickedCount"></span></span>
+      <div class="form-check form-switch mb-0 small">
+        <input class="form-check-input" type="checkbox" role="switch" id="onlyPicked">
+        <label class="form-check-label text-secondary" for="onlyPicked">Only ticked</label>
+      </div>
+    </div>
+    <input type="search" id="ingFilter" class="form-control form-control-sm mb-2" placeholder="Filter ingredients…" autocomplete="off">
+
+    <div class="card mb-3">
+      <div class="list-group list-group-flush" id="ingList">
+        {% for i in ingredients %}
+        <label class="list-group-item d-flex align-items-center gap-2 ing-pick"
+               style="background:var(--hx-panel);border-color:var(--hx-border);cursor:pointer"
+               data-search="{{ (i.name ~ ' ' ~ (i.company or '') ~ ' ' ~ (i.shop or ''))|lower }}">
+          <input class="form-check-input mt-0 flex-shrink-0" type="checkbox" name="ingredient_ids" value="{{ i.id }}"
+                 {{ 'checked' if i.id in members }}>
+          {% if i.image_filename %}
+            <img src="/static/ingredient_images/{{ i.image_filename }}" alt=""
+                 style="width:32px;height:32px;object-fit:contain;border-radius:6px;background:var(--hx-bg);flex-shrink:0">
+          {% endif %}
+          <span style="min-width:0">
+            <span class="d-block text-truncate">{{ i.name }}</span>
+            {% if i.company or i.shop %}
+            <span class="d-block text-secondary small text-truncate">{{ i.company }}{% if i.company and i.shop %} · {% endif %}{{ i.shop }}</span>
+            {% endif %}
+          </span>
+        </label>
+        {% else %}
+        <div class="list-group-item text-secondary" style="background:var(--hx-panel)">No ingredients yet.</div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="d-flex gap-2">
+      <button type="submit" class="btn btn-primary px-4"><i class="bi bi-check-lg me-1"></i>Save</button>
+      <a href="/categories" class="btn btn-outline-secondary">Cancel</a>
+      <button type="submit" form="deleteForm" class="btn btn-outline-danger ms-auto"><i class="bi bi-trash me-1"></i>Delete</button>
+    </div>
+  </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  var filter = document.getElementById('ingFilter');
+  var onlyPicked = document.getElementById('onlyPicked');
+  var rows = document.querySelectorAll('.ing-pick');
+  var count = document.getElementById('pickedCount');
+
+  function apply() {
+    var q = filter.value.trim().toLowerCase();
+    var picked = 0;
+    rows.forEach(function (r) {
+      var box = r.querySelector('input');
+      if (box.checked) picked++;
+      var show = (!q || r.dataset.search.indexOf(q) !== -1) && (!onlyPicked.checked || box.checked);
+      // d-flex beats the hidden attribute, so toggle the display class instead.
+      r.classList.toggle('d-flex', show);
+      r.classList.toggle('d-none', !show);
+    });
+    count.textContent = '· ' + picked + ' ticked';
+  }
+  filter.addEventListener('input', apply);
+  onlyPicked.addEventListener('change', apply);
+  document.getElementById('ingList').addEventListener('change', apply);
+  // Ticked ingredients first, so a category's members are easy to see.
+  var list = document.getElementById('ingList');
+  Array.prototype.slice.call(rows)
+    .sort(function (a, b) { return b.querySelector('input').checked - a.querySelector('input').checked; })
+    .forEach(function (r) { list.appendChild(r); });
+  apply();
+})();
+</script>
+{% endblock %}

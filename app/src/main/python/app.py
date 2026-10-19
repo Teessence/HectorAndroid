@@ -10,6 +10,7 @@ from database import (
     _empty_totals, _add, NUTRIENT_FIELDS, _STEP_TABLE, _sql_unaccent,
 )
 import garmin
+import categories as categories_mod
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # On Android these live in writable storage (set by the mobile launcher);
@@ -116,6 +117,21 @@ def format_relative_time(value, now=None):
     return f'{years} year{"s" if years != 1 else ""} ago'
 
 
+def format_num(value, decimals=1):
+    """1000 -> '1,000', 1000.1 -> '1,000.1', 0.05 -> '0.05'. Comma thousands,
+    at most `decimals` places (two for values under 1, so small vitamin and
+    mineral amounts don't round to 0), trailing zeros dropped."""
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return value
+    places = decimals if (abs(v) >= 1 or v == 0) else max(decimals, 2)
+    s = f'{v:,.{places}f}'
+    if '.' in s:
+        s = s.rstrip('0').rstrip('.')
+    return '0' if s in ('-0', '') else s
+
+
 def get_targets():
     """Return {column_name: float} for every nutrient with a target set (or default).
     Calories is always auto-computed from BMR (not user-settable)."""
@@ -166,6 +182,7 @@ def create_app():
     )
     app.secret_key = 'hector-health-2024-secret'
     app.jinja_env.filters['relative_time'] = format_relative_time
+    app.jinja_env.filters['num'] = format_num
 
     @app.context_processor
     def globals():
@@ -192,7 +209,8 @@ def create_app():
     def index():
         import home_calc
         status = home_calc.compute_home_status(*_home_range_args())
-        return render_template('home.html', active_page='home', focus=None, **status)
+        return render_template('home.html', active_page='home', focus=None,
+                               show_weight=get_setting('home_show_weight', '1') != '0', **status)
 
     @app.route('/nutrients/<group>')
     def nutrients_full(group):
@@ -201,7 +219,8 @@ def create_app():
             return redirect(url_for('index'))
         import home_calc
         status = home_calc.compute_home_status(*_home_range_args())
-        return render_template('home.html', active_page='home', focus=group, **status)
+        return render_template('home.html', active_page='home', focus=group,
+                               show_weight=get_setting('home_show_weight', '1') != '0', **status)
 
     @app.route('/api/home_status')
     def api_home_status():
@@ -329,20 +348,23 @@ def create_app():
                                last_backup_at=get_setting('last_backup_at'),
                                ai_key=get_setting('anthropic_api_key') or '',
                                walk_fields=walk_fields,
+                               home_show_weight=get_setting('home_show_weight', '1') != '0',
                                active_page='settings')
 
     @app.route('/settings/display', methods=['POST'])
     def settings_display():
         theme = request.form.get('theme', 'dark')
         set_setting('theme', 'light' if theme == 'light' else 'dark')
+        set_setting('home_show_weight', '1' if request.form.get('home_show_weight') else '0')
         flash('Display settings saved.', 'success')
-        return redirect(url_for('settings'))
+        return redirect(url_for('settings', tab='display'))
 
     @app.route('/settings/calibrate', methods=['POST'])
     def settings_calibrate():
-        """Wipe all tracked data (diary entries + daily steps) and re-seed a
-        single row in daily_steps at the configured starting_date with the
-        configured starting_weight. Ingredients and recipes are NOT touched."""
+        """Wipe all tracked data (diary + meal notes, daily steps, hydration,
+        walks) and re-seed a single row in daily_steps at the configured
+        starting_date with the configured starting_weight. Ingredients,
+        recipes, inventory, notes and settings are NOT touched."""
         starting_date  = get_setting('starting_date')
         starting_w_raw = get_setting('starting_weight')
         try:
@@ -351,14 +373,21 @@ def create_app():
             sw = None
         conn = get_db()
         conn.execute('DELETE FROM diary_entries')
+        conn.execute('DELETE FROM diary_slot_notes')
         conn.execute('DELETE FROM daily_steps')
+        conn.execute('DELETE FROM daily_hydration')
+        conn.execute('DELETE FROM step_minutes')       # walks are built from these
+        conn.execute('DELETE FROM walking_sessions')   # old walk format, else re-imported
+        # The phone's last raw counter reading ('step_sensor_state') is kept on
+        # purpose: it lets steps taken after the reset count from this moment.
+        conn.execute("DELETE FROM settings WHERE key = 'walk_last_step_ms'")
         if starting_date and sw is not None:
             conn.execute(
                 'INSERT INTO daily_steps(date, steps, weight_kg) VALUES (?, 0, ?)',
                 (starting_date, sw))
         conn.commit()
         conn.close()
-        flash('Calibrated — diary and steps wiped. Starting fresh from your settings.', 'success')
+        flash('Calibrated — diary, steps, walks and hydration wiped. Starting fresh from your settings.', 'success')
         return redirect(url_for('settings'))
 
     @app.route('/settings/ai', methods=['POST'])
@@ -456,30 +485,42 @@ def create_app():
         offset = (page - 1) * INGREDIENTS_PER_PAGE
         # Fetch one extra to detect whether more pages exist without a COUNT.
         limit_sql = f' LIMIT {INGREDIENTS_PER_PAGE + 1} OFFSET {offset}'
-        conn = get_db()
+        where, args = [], []
         if q:
             like = f'%{_sql_unaccent(q)}%'
-            rows = conn.execute(
-                base_query +
-                ' WHERE unaccent(i.name) LIKE ? OR unaccent(i.shop) LIKE ? OR unaccent(i.company) LIKE ?'
-                ' ORDER BY ' + order_sql + limit_sql,
-                (like, like, like)).fetchall()
-        else:
-            rows = conn.execute(base_query + ' ORDER BY ' + order_sql + limit_sql).fetchall()
-        conn.close()
-
+            where.append('(unaccent(i.name) LIKE ? OR unaccent(i.shop) LIKE ? OR unaccent(i.company) LIKE ?)')
+            args += [like, like, like]
+        # ?cat=<id>: only ingredients in that category.
+        try:
+            cat_id = int(request.args.get('cat') or 0)
+        except ValueError:
+            cat_id = 0
+        if cat_id:
+            where.append('EXISTS (SELECT 1 FROM ingredient_categories ic '
+                         'WHERE ic.ingredient_id = i.id AND ic.category_id = ?)')
+            args.append(cat_id)
+        where_sql = (' WHERE ' + ' AND '.join(where)) if where else ''
+        conn = get_db()
+        rows = conn.execute(base_query + where_sql + ' ORDER BY ' + order_sql + limit_sql,
+                            args).fetchall()
         has_more = len(rows) > INGREDIENTS_PER_PAGE
         rows = rows[:INGREDIENTS_PER_PAGE]
+        ing_cats = categories_mod.names_for_ingredients(conn, [r['id'] for r in rows])
+        conn.close()
 
         # AJAX (infinite scroll): return JSON with just the rendered <tr> rows.
         if request.headers.get('X-Requested-With') == 'fetch':
             html = render_template('_ingredients_rows.html',
-                                   ingredients=rows, targets=get_targets())
+                                   ingredients=rows, ing_cats=ing_cats, targets=get_targets())
             return jsonify({'html': html, 'has_more': has_more, 'page': page})
 
+        conn = get_db()
+        all_categories = categories_mod.list_categories(conn)
+        conn.close()
         return render_template('ingredients_list.html', ingredients=rows, q=q,
                                sort_col=sort_col, sort_dir=sort_dir,
-                               page=page, has_more=has_more,
+                               page=page, has_more=has_more, ing_cats=ing_cats,
+                               categories=all_categories, cat_id=cat_id,
                                targets=get_targets(), active_page='ingredients')
 
     VIT_MIN_FIELDS = [
@@ -504,7 +545,7 @@ def create_app():
                         + ','.join(VIT_MIN_FIELDS))
                 placeholders = ','.join(['?'] * (16 + len(VIT_MIN_FIELDS)))
                 conn = get_db()
-                conn.execute(f'INSERT INTO ingredients({cols}) VALUES({placeholders})',
+                cur = conn.execute(f'INSERT INTO ingredients({cols}) VALUES({placeholders})',
                     (f['name'].strip(), f['unit'], float(f['serving_size']),
                      float(f['package_size']), float(f['package_cost']),
                      float(f['calories']), float(f['protein']), float(f['fat']),
@@ -513,14 +554,28 @@ def create_app():
                      float(f.get('salt', 0) or 0),
                      f.get('shop','').strip(), f.get('company','').strip(),
                      image_filename, *vm))
+                _save_ingredient_categories(conn, cur.lastrowid, f)
                 conn.commit()
                 conn.close()
                 flash(f'Ingredient "{f["name"]}" added.', 'success')
                 return redirect(url_for('ingredients'))
             except Exception as e:
                 flash(f'Error: {e}', 'danger')
+        conn = get_db()
+        cats = categories_mod.list_categories(conn)
+        conn.close()
         return render_template('ingredient_form.html', ing=None, active_page='ingredients',
+                               categories=cats, selected_categories=set(),
                                ai_enabled=bool(get_setting('anthropic_api_key')))
+
+    def _save_ingredient_categories(conn, ing_id, form):
+        """Ticked categories plus any typed in 'New category' (comma-separated)."""
+        ids = categories_mod.parse_form_ids(form)
+        for name in (form.get('new_categories') or '').split(','):
+            cid = categories_mod.get_or_create(conn, name)
+            if cid:
+                ids.add(cid)
+        categories_mod.set_for_ingredient(conn, ing_id, ids)
 
     @app.route('/ingredients/<int:ing_id>/edit', methods=['GET', 'POST'])
     def ingredient_edit(ing_id):
@@ -557,13 +612,19 @@ def create_app():
                      float(f.get('salt', 0) or 0),
                      f.get('shop','').strip(), f.get('company','').strip(),
                      image_filename, *vm, ing_id))
+                _save_ingredient_categories(conn, ing_id, f)
                 conn.commit()
                 conn.close()
                 flash('Ingredient updated.', 'success')
                 return redirect(url_for('ingredients'))
             except Exception as e:
                 flash(f'Error: {e}', 'danger')
+        conn = get_db()
+        cats = categories_mod.list_categories(conn)
+        selected = categories_mod.ids_for_ingredient(conn, ing_id)
+        conn.close()
         return render_template('ingredient_form.html', ing=ing, active_page='ingredients',
+                               categories=cats, selected_categories=selected,
                                ai_enabled=bool(get_setting('anthropic_api_key')))
 
     @app.route('/ingredients/<int:ing_id>/delete', methods=['POST'])
@@ -573,6 +634,7 @@ def create_app():
             ing = conn.execute('SELECT image_filename FROM ingredients WHERE id=?', (ing_id,)).fetchone()
             if ing:
                 delete_ingredient_image(ing['image_filename'])
+            conn.execute('DELETE FROM ingredient_categories WHERE ingredient_id=?', (ing_id,))
             conn.execute('DELETE FROM ingredients WHERE id=?', (ing_id,))
             conn.commit()
             conn.close()
@@ -580,6 +642,68 @@ def create_app():
         except Exception as e:
             flash(f'Cannot delete: {e}', 'danger')
         return redirect(url_for('ingredients'))
+
+    # ── Categories ────────────────────────────────────────────────────────────
+
+    @app.route('/categories', methods=['GET', 'POST'])
+    def categories_index():
+        conn = get_db()
+        if request.method == 'POST':
+            name = request.form.get('name', '').strip()
+            if not name:
+                flash('Give the category a name.', 'warning')
+            elif conn.execute('SELECT 1 FROM categories WHERE name = ? COLLATE NOCASE', (name,)).fetchone():
+                flash(f'"{name}" already exists.', 'warning')
+            else:
+                cid = categories_mod.get_or_create(conn, name)
+                conn.commit()
+                conn.close()
+                flash(f'Category "{name}" created — now tick its ingredients.', 'success')
+                return redirect(url_for('category_edit', cat_id=cid))
+        cats = categories_mod.list_categories(conn)
+        conn.close()
+        return render_template('categories.html', categories=cats, active_page='categories')
+
+    @app.route('/categories/<int:cat_id>', methods=['GET', 'POST'])
+    def category_edit(cat_id):
+        conn = get_db()
+        cat = conn.execute('SELECT * FROM categories WHERE id = ?', (cat_id,)).fetchone()
+        if not cat:
+            conn.close()
+            flash('Category not found.', 'danger')
+            return redirect(url_for('categories_index'))
+        if request.method == 'POST':
+            name = request.form.get('name', '').strip()
+            clash = conn.execute('SELECT 1 FROM categories WHERE name = ? COLLATE NOCASE AND id != ?',
+                                 (name, cat_id)).fetchone()
+            if not name or clash:
+                flash('That name is empty or already used by another category.', 'warning')
+            else:
+                conn.execute('UPDATE categories SET name = ? WHERE id = ?', (name, cat_id))
+                categories_mod.set_for_category(
+                    conn, cat_id, categories_mod.parse_form_ids(request.form, 'ingredient_ids'))
+                conn.commit()
+                conn.close()
+                flash(f'Category "{name}" saved.', 'success')
+                return redirect(url_for('categories_index'))
+        members = {r['ingredient_id'] for r in conn.execute(
+            'SELECT ingredient_id FROM ingredient_categories WHERE category_id = ?', (cat_id,))}
+        ings = conn.execute(
+            'SELECT id, name, company, shop, image_filename FROM ingredients ORDER BY name COLLATE NOCASE'
+        ).fetchall()
+        conn.close()
+        return render_template('category_edit.html', cat=cat, ingredients=ings, members=members,
+                               active_page='categories')
+
+    @app.route('/categories/<int:cat_id>/delete', methods=['POST'])
+    def category_delete(cat_id):
+        conn = get_db()
+        conn.execute('DELETE FROM ingredient_categories WHERE category_id = ?', (cat_id,))
+        conn.execute('DELETE FROM categories WHERE id = ?', (cat_id,))
+        conn.commit()
+        conn.close()
+        flash('Category deleted. Its ingredients were kept.', 'success')
+        return redirect(url_for('categories_index'))
 
     # ── Recipe library ────────────────────────────────────────────────────────
 

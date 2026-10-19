@@ -48,7 +48,7 @@
             <div class="nutri-head" role="button" tabindex="0" aria-expanded="false">
               <div class="d-flex justify-content-between" style="font-size:.85rem">
                 <span class="text-secondary"><i class="bi bi-chevron-right nutri-chev"></i>{{ label }}{% if unit %} ({{ unit }}){% endif %}</span>
-                <span>{{ "%.1f"|format(v) }} / {{ "%.0f"|format(t) if t else '—' }}{% if t and t > 0 %} <span class="text-secondary">({{ "%.0f"|format(p if p >= 0 else 0) }}%)</span>{% endif %}</span>
+                <span>{{ v|num }} / {{ t|num if t else '—' }}{% if t and t > 0 %} <span class="text-secondary">({{ (p if p >= 0 else 0)|num(0) }}%)</span>{% endif %}</span>
               </div>
               <div class="hx-bar hx-bar-sm"><i style="width:{{ 100 if p > 100 else (p if p >= 0 else 0) }}%{% if p >= 100 %};background:#3fb950{% endif %}"></i></div>
             </div>
@@ -126,14 +126,24 @@
 
   {% if not focus %}
   {# ── Steps tile ────────────────────────────────────────────────────────── #}
-  <div class="card hx-tile mb-3" style="--accent:#388bfd">
+  {# Numbers marked hx-secret are blurred until the eye is tapped; the choice is
+     remembered per tile (data-blur-key). The % stays visible. #}
+  <div class="card hx-tile mb-3 is-blurred" style="--accent:#388bfd" data-blur-key="steps">
     <div class="card-body">
-      <a class="hx-tile-label hx-tile-link" href="/steps"><i class="bi bi-person-walking me-1"></i>Steps<i class="bi bi-chevron-right hx-open"></i></a>
+      <div class="d-flex justify-content-between align-items-center">
+        <a class="hx-tile-label hx-tile-link" href="/steps"><i class="bi bi-person-walking me-1"></i>Steps<i class="bi bi-chevron-right hx-open"></i></a>
+        {% if steps_required is not none %}
+        <button type="button" class="hx-eye" aria-label="Show or hide the numbers"><i class="bi bi-eye-slash"></i></button>
+        {% endif %}
+      </div>
       {% if steps_required is not none %}
-        <div class="hx-basis">From today's weight · {{ morning_weight }} kg this morning → {{ target_weight }} kg goal</div>
+        {# Weight info can be hidden in Settings → Display. #}
+        {% if show_weight %}
+        <div class="hx-basis">From today's weight · <span class="hx-secret">{{ morning_weight }}</span> kg this morning → <span class="hx-secret">{{ target_weight }}</span> kg goal</div>
+        {% endif %}
         <div class="d-flex justify-content-between align-items-baseline">
           <div class="hx-big">
-            <span class="hx-info" id="steps_required"
+            <span class="hx-info hx-secret" id="steps_required"
                   data-info="Steps still needed to walk from this morning's weight down to your goal weight. Every step you take today comes off this number.">{{ '{:,}'.format(steps_required) }}</span>
             <span class="hx-of">steps to go</span>
           </div>
@@ -142,10 +152,10 @@
         </div>
         <div class="hx-bar"><i id="steps_bar" style="width:{{ percent or 0 }}%"></i></div>
         <div class="hx-sub">
-          <span id="kg_to_go">{{ kg_to_go }}</span> kg to go ·
-          <span id="thousands_left">{{ '{:,}'.format(thousands_left) }}</span> thousand ·
+          {% if show_weight %}<span id="kg_to_go" class="hx-secret">{{ kg_to_go }}</span> kg to go ·{% endif %}
+          <span id="thousands_left" class="hx-secret">{{ '{:,}'.format(thousands_left) }}</span> thousand ·
           {% if range_key == 'today' %}walked today{% else %}walked in period{% endif %}
-          <span id="range_steps">{{ '{:,}'.format(range_steps) }}</span>
+          <span id="range_steps" class="hx-secret">{{ '{:,}'.format(range_steps) }}</span>
         </div>
         <div id="hx-info-box" class="small text-info mt-1" style="min-height:1.2em"></div>
       {% else %}
@@ -155,22 +165,41 @@
   </div>
 
   {# ── Calories tile ─────────────────────────────────────────────────────── #}
-  {% set cal_pct = (today_calories / calorie_target * 100) if calorie_target else 0 %}
-  {% set over = calorie_diff is not none and calorie_diff > 0 %}
-  <div class="card hx-tile mb-3" style="--accent:#f78536">
+  {# Two comparisons: against the target (BMR minus your daily deficit) and
+     against plain BMR. Each row: eaten / target kcal and over/under. #}
+  {% macro cal_row(key, label, hint, target, diff) %}
+    {% set over = diff is not none and diff > 0 %}
+    {% set pct = (today_calories / target * 100) if target else 0 %}
+    <div class="cal-row" data-row="{{ key }}">
+      <div class="hx-basis mb-1">{{ label }} <span class="text-secondary">· {{ hint }}</span></div>
+      <div class="d-flex justify-content-between align-items-baseline gap-2">
+        <div class="hx-big hx-big-sm">
+          <span class="hx-secret" data-field="eaten">{{ '{:,}'.format(today_calories) }}</span>
+          <span class="hx-of">/ {% if target is not none %}<span class="hx-secret" data-field="target">{{ '{:,}'.format(target) }}</span>{% else %}—{% endif %} kcal</span>
+        </div>
+        {% if diff is not none %}
+        <span class="hx-sub mt-0 fw-semibold text-nowrap hx-secret" data-field="diff"
+              style="color:{{ '#f85149' if over else '#3fb950' }}">{{ '{:,}'.format(diff|abs) }} {{ 'over' if over else 'under' }}</span>
+        {% endif %}
+      </div>
+      <div class="hx-bar"><i data-field="bar" style="width:{{ [pct, 100]|min }}%{% if over %};background:#f85149{% endif %}"></i></div>
+    </div>
+  {% endmacro %}
+  <div class="card hx-tile mb-3 is-blurred" style="--accent:#f78536" data-blur-key="calories">
     <div class="card-body">
       <div class="d-flex justify-content-between align-items-center">
         <a class="hx-tile-label hx-tile-link" href="/diary{% if range_days == 1 %}/{{ range_to }}{% endif %}"><i class="bi bi-fire me-1"></i>Calories<i class="bi bi-chevron-right hx-open"></i></a>
-        {% if calorie_diff is not none %}
-        <span id="calorie_diff" class="hx-sub mt-0 fw-semibold" style="color:{{ '#f85149' if over else '#3fb950' }}">{{ '{:,}'.format(calorie_diff|abs) }} {{ 'over' if over else 'under' }}</span>
+        {% if calorie_target is not none %}
+        <button type="button" class="hx-eye" aria-label="Show or hide the numbers"><i class="bi bi-eye-slash"></i></button>
         {% endif %}
       </div>
-      <div class="hx-big mt-1">
-        <span id="today_calories">{{ '{:,}'.format(today_calories) }}</span>
-        <span class="hx-of">/ {% if calorie_target is not none %}<span id="calorie_target">{{ '{:,}'.format(calorie_target) }}</span>{% else %}—{% endif %} kcal</span>
-      </div>
-      <div class="hx-bar"><i id="cal_bar" style="width:{{ [cal_pct, 100]|min }}%{% if over %};background:#f85149{% endif %}"></i></div>
-      {% if calorie_target is none %}<div class="hx-sub">Add your profile to compute a target.</div>{% endif %}
+      {% if calorie_target is not none %}
+        {{ cal_row('target', 'With deficit', 'BMR − ' ~ calorie_deficit ~ ' kcal/day', calorie_target, calorie_diff) }}
+        {{ cal_row('bmr', 'BMR only', 'no deficit taken off', bmr_target, bmr_diff) }}
+      {% else %}
+        <div class="hx-big mt-1">{{ '{:,}'.format(today_calories) }} <span class="hx-of">kcal</span></div>
+        <div class="hx-sub">Add your profile to compute a target.</div>
+      {% endif %}
     </div>
   </div>
 
@@ -214,8 +243,30 @@
   .hx-bar-sm { height: 5px; margin-top: .2rem; }
   .hx-sub { font-size: .8rem; color: #8b949e; margin-top: .35rem; }
   .hx-basis { font-size: .75rem; color: #8b949e; margin: .25rem 0 .35rem; }
+  /* Hidden numbers: blurred, still taking their normal space. */
+  .hx-secret { transition: filter .2s; }
+  .is-blurred .hx-secret { filter: blur(7px); cursor: pointer; user-select: none; }
+  .hx-eye {
+    background: none; border: 0; padding: .1rem .3rem; line-height: 1;
+    color: #8b949e; font-size: 1.05rem;
+  }
+  .hx-eye:hover, .hx-eye:focus-visible { color: var(--accent); }
+  .hx-big-sm { font-size: 1.4rem; }
+  .cal-row + .cal-row { margin-top: .7rem; padding-top: .6rem; border-top: 1px solid var(--hx-border); }
   /* ~3 rows visible, then scroll. Fixed px (not vh) to avoid WebView collapse. */
-  .nutri-scroll { max-height: 112px; overflow-y: auto; }
+  .nutri-scroll { max-height: 112px; overflow-y: auto; scrollbar-width: none; padding-right: 10px; }
+  .nutri-scroll::-webkit-scrollbar { display: none; }
+  /* Our own always-visible scrollbar (phone browsers hide theirs until you
+     touch the list). Drawn by JS only when there's something to scroll. */
+  .nutri-scroll-wrap { position: relative; }
+  .nutri-track {
+    position: absolute; top: 0; right: 0; bottom: 0; width: 4px;
+    border-radius: 2px; background: var(--hx-chip); pointer-events: none;
+  }
+  .nutri-thumb {
+    position: absolute; left: 0; right: 0; border-radius: 2px;
+    background: var(--accent); opacity: .75;
+  }
   .nutri-row { margin-bottom: .55rem; }
   .nutri-row:last-child { margin-bottom: 0; }
   /* Expanding a row lifts the 3-row scroll cap so the detail can be read;
@@ -245,7 +296,34 @@
 </style>
 <script>
 (function () {
-  function fmt(n) { try { return Number(n).toLocaleString(); } catch (e) { return n; } }
+  function fmt(n) { try { return Number(n).toLocaleString('en-US', { maximumFractionDigits: 1 }); } catch (e) { return n; } }
+
+  // ── Blurred numbers (Steps and Calories tiles) ─────────────────────────────
+  // Hidden by default; the eye in each tile's header shows/hides them, and
+  // tapping a blurred number shows them too. The choice is remembered per tile.
+  function blurKey(tile) { return 'hx-blur-' + tile.dataset.blurKey; }
+  function setBlurred(tile, blurred) {
+    tile.classList.toggle('is-blurred', blurred);
+    var icon = tile.querySelector('.hx-eye i');
+    if (icon) icon.className = 'bi ' + (blurred ? 'bi-eye-slash' : 'bi-eye');
+    try { localStorage.setItem(blurKey(tile), blurred ? '1' : '0'); } catch (e) {}
+  }
+  document.querySelectorAll('[data-blur-key]').forEach(function (tile) {
+    var saved = null;
+    try { saved = localStorage.getItem(blurKey(tile)); } catch (e) {}
+    setBlurred(tile, saved !== '0');  // blurred unless the user chose to show
+    var eye = tile.querySelector('.hx-eye');
+    if (eye) eye.addEventListener('click', function () {
+      setBlurred(tile, !tile.classList.contains('is-blurred'));
+    });
+    tile.addEventListener('click', function (e) {
+      if (tile.classList.contains('is-blurred') && e.target.closest('.hx-secret')) {
+        e.stopPropagation();
+        e.preventDefault();
+        setBlurred(tile, false);
+      }
+    }, true);  // capture: runs before the number's own "what is this" handler
+  });
 
   // Click a number to show what it means.
   document.querySelectorAll('.hx-info').forEach(function (el) {
@@ -303,16 +381,46 @@
   // Same period for the live refresh and the suggestion lookups.
   var rangeQuery = location.search || '';
 
+  // ── Always-visible scrollbar for the nutrient lists ────────────────────────
+  function updateScrollbar(scroll) {
+    var track = scroll.__track;
+    if (!track) return;
+    var overflow = scroll.scrollHeight - scroll.clientHeight;
+    track.hidden = overflow <= 1;
+    if (track.hidden) return;
+    var h = Math.max(16, scroll.clientHeight * scroll.clientHeight / scroll.scrollHeight);
+    var top = (scroll.clientHeight - h) * (scroll.scrollTop / overflow);
+    track.firstChild.style.height = h + 'px';
+    track.firstChild.style.top = top + 'px';
+  }
+  document.querySelectorAll('.nutri-scroll').forEach(function (scroll) {
+    var wrap = document.createElement('div');
+    wrap.className = 'nutri-scroll-wrap';
+    scroll.parentNode.insertBefore(wrap, scroll);
+    wrap.appendChild(scroll);
+    var track = document.createElement('div');
+    track.className = 'nutri-track';
+    track.innerHTML = '<div class="nutri-thumb"></div>';
+    wrap.appendChild(track);
+    scroll.__track = track;
+    scroll.addEventListener('scroll', function () { updateScrollbar(scroll); }, { passive: true });
+    updateScrollbar(scroll);
+  });
+  window.addEventListener('resize', function () {
+    document.querySelectorAll('.nutri-scroll').forEach(updateScrollbar);
+  });
+
   // ── Nutrient rows: expand to show foods that cover the target ──────────────
   function esc(s) {
     return String(s).replace(/[&<>"']/g, function (c) {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
     });
   }
+  // Same style as the server's `num` filter: 1,000 / 1,000.1 / 0.05.
   function num(v) {
     if (v === null || v === undefined) return '—';
     var a = Math.abs(v);
-    return a >= 100 ? Math.round(v).toLocaleString() : a >= 10 ? v.toFixed(1) : v.toFixed(2);
+    return Number(v).toLocaleString('en-US', { maximumFractionDigits: a >= 10 ? 1 : 2 });
   }
 
   function renderList(items, kind, unit, d) {
@@ -330,9 +438,9 @@
       if (x.need_amount !== null) {
         var amt = kind === 'recipes'
           ? num(x.need_amount) + ' portion' + (x.need_amount === 1 ? '' : 's')
-          : Math.round(x.need_amount).toLocaleString() + ' ' + esc(x.need_unit);
+          : Math.round(x.need_amount).toLocaleString('en-US') + ' ' + esc(x.need_unit);
         right = '<div class="fw-semibold">' + amt + '</div>' +
-                '<div class="text-secondary" style="font-size:.7rem">' + x.need_kcal.toLocaleString() + ' kcal</div>';
+                '<div class="text-secondary" style="font-size:.7rem">' + x.need_kcal.toLocaleString('en-US') + ' kcal</div>';
       } else {
         right = '<div class="fw-semibold">' + num(x.value) + (unit ? ' ' + unit : '') + '</div>';
       }
@@ -397,6 +505,7 @@
       if (open && !box.dataset.loaded) { box.dataset.loaded = '1'; loadDetail(row); }
       var scroll = row.closest('.nutri-scroll');
       scroll.classList.toggle('has-open', !!scroll.querySelector('.nutri-row.open'));
+      updateScrollbar(scroll);
     }
     head.addEventListener('click', toggle);
     head.addEventListener('keydown', function (e) {
@@ -417,20 +526,26 @@
         if (d.kg_to_go !== null) setText('kg_to_go', d.kg_to_go);
       }
       setText('range_steps', fmt(d.range_steps));
-      setText('today_calories', fmt(d.today_calories));
       setText('hydration_ml', fmt(d.hydration_ml));
       if (d.hydration_target) setBar('hyd_bar', d.hydration_ml / d.hydration_target * 100);
-      if (d.calorie_target !== null && d.calorie_target !== undefined) {
-        setText('calorie_target', fmt(d.calorie_target));
-        const over = d.calorie_diff > 0;
-        const diffEl = document.getElementById('calorie_diff');
-        if (diffEl && d.calorie_diff !== null && d.calorie_diff !== undefined) {
-          diffEl.textContent = fmt(Math.abs(d.calorie_diff)) + (over ? ' over' : ' under');
-          diffEl.style.color = over ? '#f85149' : '#3fb950';
+      // Both calorie rows: with the deficit, and plain BMR.
+      [['target', d.calorie_target, d.calorie_diff], ['bmr', d.bmr_target, d.bmr_diff]].forEach(function (r) {
+        var row = document.querySelector('.cal-row[data-row="' + r[0] + '"]');
+        if (!row || r[1] === null || r[1] === undefined) return;
+        var over = r[2] > 0;
+        var f = function (name) { return row.querySelector('[data-field="' + name + '"]'); };
+        if (f('eaten')) f('eaten').textContent = fmt(d.today_calories);
+        if (f('target')) f('target').textContent = fmt(r[1]);
+        if (f('diff') && r[2] !== null && r[2] !== undefined) {
+          f('diff').textContent = fmt(Math.abs(r[2])) + (over ? ' over' : ' under');
+          f('diff').style.color = over ? '#f85149' : '#3fb950';
         }
-        const calBar = setBar('cal_bar', d.calorie_target ? d.today_calories / d.calorie_target * 100 : 0);
-        if (calBar) calBar.style.background = over ? '#f85149' : '';
-      }
+        var bar = f('bar');
+        if (bar) {
+          bar.style.width = Math.max(0, Math.min(100, r[1] ? d.today_calories / r[1] * 100 : 0)) + '%';
+          bar.style.background = over ? '#f85149' : '';
+        }
+      });
     } catch (e) { /* ignore, retry next tick */ }
   }
   setInterval(poll, 20000);

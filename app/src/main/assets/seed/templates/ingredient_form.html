@@ -66,6 +66,27 @@
         </div>
       </div>
 
+      {# ── Categories (same links as the Categories page) ── #}
+      <div class="card mb-3">
+        <div class="card-body p-4">
+          <h6 class="text-secondary text-uppercase mb-3" style="font-size:.72rem;letter-spacing:.1em">
+            <i class="bi bi-tags me-1"></i>Categories
+          </h6>
+          {% if categories %}
+          <div class="d-flex flex-wrap gap-2 mb-3">
+            {% for c in categories %}
+            <input type="checkbox" class="btn-check" name="category_ids" value="{{ c.id }}" id="cat-{{ c.id }}"
+                   autocomplete="off" {{ 'checked' if c.id in selected_categories }}>
+            <label class="btn btn-sm btn-outline-secondary rounded-pill" for="cat-{{ c.id }}">{{ c.name }}</label>
+            {% endfor %}
+          </div>
+          {% endif %}
+          <input type="text" name="new_categories" class="form-control form-control-sm"
+                 placeholder="{{ 'Add new categories, comma-separated' if categories else 'e.g. Fruits, Snacks — comma-separated' }}">
+          <div class="form-text">Pick any number. New names are created when you save.</div>
+        </div>
+      </div>
+
       {# ── Image ── #}
       <div class="card mb-3">
         <div class="card-body p-4">

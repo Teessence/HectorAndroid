@@ -21,7 +21,7 @@
 
 {# Separate form to host the Calibrate button #}
 <form id="calibrate-form" method="post" action="/settings/calibrate"
-      onsubmit="return confirm('Wipe ALL diary entries and step logs and start fresh from {{ s.starting_date or '—' }} at {{ s.starting_weight or '—' }} kg?\n\nIngredients and recipes will be kept.\n\nThis cannot be undone.');"></form>
+      onsubmit="return confirm('Wipe ALL diary entries, steps, weights, walks and hydration and start fresh from {{ s.starting_date or '—' }} at {{ s.starting_weight or '—' }} kg?\n\nIngredients, recipes, inventory, notes and settings will be kept.\n\nThis cannot be undone.');"></form>
 
 <ul class="nav nav-tabs settings-tabs" role="tablist">
   <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#set-profile"   type="button"><i class="bi bi-person me-1"></i>Profile</button></li>
@@ -335,6 +335,15 @@
             <i class="bi bi-brightness-high me-1"></i>Light mode
           </label>
         </div>
+        <h6 class="fw-bold mt-4 mb-2"><i class="bi bi-house me-1"></i>Home</h6>
+        <div class="form-check form-switch mb-2">
+          <input class="form-check-input" type="checkbox" role="switch" name="home_show_weight" value="1"
+                 id="home_show_weight" {{ 'checked' if home_show_weight }}>
+          <label class="form-check-label" for="home_show_weight">
+            Display weight info in Steps
+            <span class="d-block text-secondary small">This morning's weight → goal, and kg to go</span>
+          </label>
+        </div>
         <div class="form-text">Changes apply immediately.</div>
       </form>
     </div>
@@ -428,9 +437,10 @@
         <i class="bi bi-arrow-counterclockwise me-1"></i>Calibrate — Start Fresh
       </h6>
       <p class="text-secondary mb-3" style="font-size:.85rem">
-        Wipes <strong>all diary entries</strong> and <strong>all daily-steps records</strong>,
+        Wipes <strong>all diary entries</strong> (and meal notes), <strong>all daily steps and weights</strong>,
+        <strong>all walks</strong> and <strong>all hydration</strong>,
         then seeds your current <em>starting date</em> and <em>starting weight</em> as the new baseline.
-        <strong class="text-body-emphasis">Ingredients and recipes are kept.</strong>
+        <strong class="text-body-emphasis">Ingredients, recipes, inventory, notes and settings are kept.</strong>
         This cannot be undone.
       </p>
       <button type="submit" form="calibrate-form" class="btn btn-outline-danger">

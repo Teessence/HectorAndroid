@@ -5,10 +5,12 @@
    page can show one group at a time, and a data-label used as the caption
    when rows turn into cards on phones. #}
 
+{# fmt like '%.2f' sets the most decimal places shown; values get comma
+   thousands separators and trailing zeros dropped (see the `num` filter). #}
 {% macro val_pct(value, target, fmt='%.1f') %}
   {%- if value -%}
-    {{ fmt|format(value) }}{%- if target and target > 0 -%}
-      <span class="text-secondary ing-pct" style="font-size:.7rem">&nbsp;({{ "%.1f"|format(value / target * 100) }}%)</span>
+    {{ value|num(fmt[2]|int) }}{%- if target and target > 0 -%}
+      <span class="text-secondary ing-pct" style="font-size:.7rem">&nbsp;({{ (value / target * 100)|num }}%)</span>
     {%- endif -%}
   {%- else -%}—{%- endif -%}
 {% endmacro %}
@@ -32,6 +34,12 @@
         <span class="ing-card-meta text-secondary fw-normal">
           per {{ '%g'|format(i.serving_size) }} {{ i.unit }}{% if i.company %} · {{ i.company }}{% endif %}{% if i.shop %} · {{ i.shop }}{% endif %}
         </span>
+        {% set cats = ing_cats[i.id] if ing_cats and i.id in ing_cats else [] %}
+        {% if cats %}
+        <span class="d-flex flex-wrap gap-1 mt-1">
+          {% for c in cats %}<span class="badge rounded-pill fw-normal ing-cat">{{ c }}</span>{% endfor %}
+        </span>
+        {% endif %}
       </div>
     </div>
   </td>

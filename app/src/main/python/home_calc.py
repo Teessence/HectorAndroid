@@ -128,6 +128,13 @@ def _calorie_deficit():
 def _calorie_target():
     """Auto daily calorie target = BMR(current weight, height, age, gender) minus
     the configured deficit. None if any input is missing."""
+    bmr = _bmr_today()
+    return None if bmr is None else max(0.0, bmr - _calorie_deficit())
+
+
+def _bmr_today():
+    """BMR(current weight, height, age, gender) — the daily calories with no
+    deficit taken off. None if any input is missing."""
     weight = get_current_weight()
     height = _f(get_setting('height_cm'))
     dob = get_setting('dob')
@@ -139,7 +146,7 @@ def _calorie_target():
         bmr = calc_bmr(weight, float(height), age, gender)
     except (TypeError, ValueError):
         return None
-    return max(0.0, bmr - _calorie_deficit())
+    return max(0.0, bmr)
 
 
 RANGES = [
@@ -286,6 +293,10 @@ def compute_home_status(range_key='today', range_from=None, range_to=None):
         nutri_totals = {k: round(v, 3) for k, v in totals.items()}
         calorie_target_int = int(round(calorie_target * days)) if calorie_target is not None else None
         calorie_diff = (range_calories - calorie_target_int) if calorie_target_int is not None else None
+        # Same comparison against plain BMR (no deficit taken off).
+        bmr = _bmr_today()
+        bmr_target_int = int(round(bmr * days)) if bmr is not None else None
+        bmr_diff = (range_calories - bmr_target_int) if bmr_target_int is not None else None
 
         # ── Hydration over the selected range ───────────────────────────────
         hrow = conn.execute(
@@ -322,6 +333,9 @@ def compute_home_status(range_key='today', range_from=None, range_to=None):
             'today_calories': range_calories,
             'calorie_target': calorie_target_int,
             'calorie_diff': calorie_diff,
+            'bmr_target': bmr_target_int,
+            'bmr_diff': bmr_diff,
+            'calorie_deficit': _calorie_deficit(),
             # hydration tile
             'hydration_ml': hydration_ml,
             'hydration_target': HYDRATION_TARGET_ML * days,

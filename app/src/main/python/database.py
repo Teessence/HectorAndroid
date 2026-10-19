@@ -272,6 +272,19 @@ def init_db():
         );
         CREATE INDEX IF NOT EXISTS idx_walks_start ON walking_sessions(start_at);
 
+        -- Ingredient categories (Fruits, Vegetables, …). An ingredient can be in
+        -- any number of categories; links go when either side is deleted.
+        CREATE TABLE IF NOT EXISTS categories (
+            id   INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE COLLATE NOCASE
+        );
+        CREATE TABLE IF NOT EXISTS ingredient_categories (
+            ingredient_id INTEGER NOT NULL REFERENCES ingredients(id) ON DELETE CASCADE,
+            category_id   INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+            PRIMARY KEY (ingredient_id, category_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_ingcat_category ON ingredient_categories(category_id);
+
         -- Steps per minute from the phone's counter. `minute` is minutes since
         -- 1970-01-01 00:00 in *local* time. Walks are built from these using
         -- the user's walk settings (see walks.py).
