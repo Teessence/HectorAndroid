@@ -12,9 +12,9 @@
           data-locked="{{ '1' if e.is_locked else '0' }}">
       <input type="hidden" name="return_to" value="index">
       {% if e.is_locked %}
-        <span class="locked-value fw-semibold">{{ "{:,}".format(e.steps) }}</span>
+        <span class="locked-value fw-semibold hx-secret is-blurred">{{ "{:,}".format(e.steps) }}</span>
         <input type="text" inputmode="numeric" name="steps" hidden
-               class="form-control form-control-sm steps-input thousands-input"
+               class="form-control form-control-sm steps-input thousands-input hx-secret is-blurred"
                style="max-width:140px"
                value="{{ '{:,}'.format(e.steps) }}" data-original="{{ e.steps }}">
         <button type="button" class="btn btn-sm btn-outline-secondary unlock-btn"
@@ -23,7 +23,7 @@
         </button>
       {% else %}
         <input type="text" inputmode="numeric" name="steps"
-               class="form-control form-control-sm steps-input thousands-input"
+               class="form-control form-control-sm steps-input thousands-input hx-secret is-blurred"
                style="max-width:140px"
                value="{{ '{:,}'.format(e.steps) }}" data-original="{{ e.steps }}">
       {% endif %}
@@ -51,8 +51,8 @@
   <td class="text-end">
     {% if e.step_calories %}
     <div class="d-flex flex-column align-items-end" style="line-height:1.2">
-      <span class="ingredient-chip" style="color:#79c0ff">{{ "{:,.0f}".format(e.step_calories) }} kcal</span>
-      <small class="text-secondary" style="font-size:.7rem">
+      <span class="ingredient-chip hx-secret is-blurred" style="color:#79c0ff">{{ "{:,.0f}".format(e.step_calories) }} kcal</span>
+      <small class="text-secondary hx-secret is-blurred" style="font-size:.7rem">
         {{ "%.1f"|format(e.weight_kg) }} kg @ {{ "%.3f"|format(e.cps) }}/step
       </small>
     </div>

@@ -378,6 +378,7 @@ def create_app():
         conn.execute('DELETE FROM daily_hydration')
         conn.execute('DELETE FROM step_minutes')       # walks are built from these
         conn.execute('DELETE FROM walking_sessions')   # old walk format, else re-imported
+        conn.execute('DELETE FROM walk_breaks')
         # The phone's last raw counter reading ('step_sensor_state') is kept on
         # purpose: it lets steps taken after the reset count from this moment.
         conn.execute("DELETE FROM settings WHERE key = 'walk_last_step_ms'")
@@ -1494,6 +1495,12 @@ def create_app():
         active_walk, _, walk_cfg = walks_mod.get_walks(limit=0)
         return jsonify({'active': active_walk, 'settings': walk_cfg,
                         'now_ms': int(datetime.now().timestamp() * 1000)})
+
+    @app.route('/api/walks/stop', methods=['POST'])
+    def api_stop_walk():
+        """End the walk in progress now; steps after this start a new walk."""
+        import walks as walks_mod
+        return jsonify({'stopped': walks_mod.stop_active_walk()})
 
     @app.route('/steps/<date_str>', methods=['GET', 'POST'])
     def steps_day(date_str):

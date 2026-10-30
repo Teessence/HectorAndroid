@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Grocery Order</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --text: #1d2330; --muted: #6b7280;
+    --line: #e5e7eb; --stripe: #fafbfc; --accent: #2563eb; --accent-soft: #eff4ff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f1218; --card: #171b23; --text: #e6e8ec; --muted: #9aa3b2;
+      --line: #2a303b; --stripe: #1b2029; --accent: #7aa2ff; --accent-soft: #1d2740;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 32px 16px; background: var(--bg); color: var(--text);
+    font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  .wrap { max-width: 1040px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 20px; }
+  .rate {
+    display: inline-flex; align-items: center; gap: 8px; margin-bottom: 16px;
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px;
+  }
+  .rate input {
+    width: 90px; font: inherit; padding: 4px 8px; border-radius: 6px;
+    border: 1px solid var(--line); background: var(--bg); color: var(--text);
+  }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; min-width: 720px; }
+  th, td { padding: 10px 14px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+  thead th {
+    position: sticky; top: 0; background: var(--card); font-size: 12px; text-transform: uppercase;
+    letter-spacing: .04em; color: var(--muted); font-weight: 600;
+  }
+  tbody tr:nth-child(even) { background: var(--stripe); }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  td.eur { color: var(--accent); }
+  .date { color: var(--muted); font-size: 13px; white-space: nowrap; }
+  tfoot td { font-weight: 600; }
+  tfoot tr.grand td { background: var(--accent-soft); font-size: 16px; border-bottom: none; }
+  .idx { color: var(--muted); width: 1%; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Grocery order — PLN &amp; EUR</h1>
+  <p class="sub">19 items · EUR values are calculated from the rate below (edit it to recalculate).</p>
+
+  <label class="rate">1 EUR = <input id="rate" type="number" step="0.0001" min="0.01" value="4.25"> PLN</label>
+
+  <div class="card">
+    <table>
+      <thead>
+        <tr>
+          <th class="idx">#</th>
+          <th>Product</th>
+          <th>Best before</th>
+          <th class="num">Qty</th>
+          <th class="num">Unit (PLN)</th>
+          <th class="num">Unit (EUR)</th>
+          <th class="num">Total (PLN)</th>
+          <th class="num">Total (EUR)</th>
+        </tr>
+      </thead>
+      <tbody id="rows"></tbody>
+      <tfoot id="foot"></tfoot>
+    </table>
+  </div>
+</div>
+
+<script>
+  const items = [
+    ["Bio Planet Pestki dyni, ciemnozielone BIO 150g", "2026-12-20", 1, 9.51],
+    ["Bio Planet Morele suszone, bezglutenowe BIO 150g", "2027-02-28", 1, 14.45],
+    ["Charsznickie Pola Natury Ogórki kiszone BIO 1000g (500g po odsączeniu)", "2026-11-30", 1, 13.18],
+    ["Lipton Yellow Label herbata czarna, ekspresowa 100 tab.", "2027-11-30", 1, 13.70],
+    ["Kujawski olej rzepakowy 1000ml", "2028-03-14", 1, 11.11],
+    ["Żywiec Zdrój niegazowany, woda źródlana 5000ml", "2027-07-27", 1, 12.99],
+    ["Jamar ocet spirytusowy 10% 500ml", "", 2, 4.35],
+    ["Ziemniaki młode z kaszubskiego pola, Twister, typ AB 1000g", "", 6, 2.85],
+    ["Krakus Gulasz angielski 300g", "2028-05-26", 2, 8.88],
+    ["Krakus Wieprzowina w sosie własnym 300g", "2028-09-07", 1, 10.90],
+    ["Cykoria Przyprawa do piernika 20g", "2027-06-30", 1, 1.68],
+    ["Rolnik Kompot wiśniowy 900ml", "2030-12-31", 1, 12.97],
+    ["Hektor Kompot z czarnej porzeczki 900g", "2027-06-30", 1, 14.27],
+    ["Gruszki Konferencja 1000g", "", 1, 7.90],
+    ["Cebula 1000g", "", 2, 2.07],
+    ["Chrzan ekologiczny Bio Planet 0.245kg", "", 1, 10.06],
+    ["Seler ekologiczny Bio Planet 1.015kg", "", 1, 9.85],
+    ["Kapusta biała 1 szt.", "", 1, 6.30],
+    ["Czosnek polski główka 1 szt.", "", 2, 3.66],
+  ];
+  const DELIVERY = 84.00;
+
+  const pln = v => v.toLocaleString("pl-PL", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " zł";
+  const eur = v => "€" + v.toLocaleString("en-IE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const esc = s => s.replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+
+  function render() {
+    const rate = parseFloat(document.getElementById("rate").value) || 4.25;
+    let goods = 0;
+    document.getElementById("rows").innerHTML = items.map(([name, date, qty, unit], i) => {
+      const total = Math.round(qty * unit * 100) / 100;
+      goods += total;
+      return `<tr>
+        <td class="idx">${i + 1}</td>
+        <td>${esc(name)}</td>
+        <td class="date">${date || "—"}</td>
+        <td class="num">${qty}</td>
+        <td class="num">${pln(unit)}</td>
+        <td class="num eur">${eur(unit / rate)}</td>
+        <td class="num">${pln(total)}</td>
+        <td class="num eur">${eur(total / rate)}</td>
+      </tr>`;
+    }).join("");
+    const grand = goods + DELIVERY;
+    const row = (label, v, cls = "") => `<tr class="${cls}">
+      <td></td><td colspan="5">${label}</td>
+      <td class="num">${pln(v)}</td><td class="num eur">${eur(v / rate)}</td></tr>`;
+    document.getElementById("foot").innerHTML =
+      row("Goods total", goods) + row("Delivery", DELIVERY) + row("Order total", grand, "grand");
+  }
+
+  document.getElementById("rate").addEventListener("input", render);
+  render();
+</script>
+</body>
+</html>

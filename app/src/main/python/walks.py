@@ -6,8 +6,10 @@ than the user's "pause" setting. It counts as a walk once it's at least the
 from the minutes every time, changing the settings regroups all past walks.
 
 The newest run is the *active* walk while the last step is more recent than
-the pause setting; it shows when it will end if you stop moving.
+the pause setting; it shows when it will end if you stop moving. Stopping it
+by hand saves a break (walk_breaks) that walks never cross.
 """
+import bisect
 import time
 from datetime import datetime, timedelta
 
@@ -38,12 +40,18 @@ def _local(minute):
     return EPOCH + timedelta(minutes=minute)
 
 
-def _segments(rows, gap):
+def _segments(rows, gap, breaks=()):
     """Group (minute, steps) rows into runs; a pause of more than `gap` idle
-    minutes between two active minutes starts a new run."""
+    minutes between two active minutes starts a new run, and so does crossing
+    one of the `breaks` (sorted minutes where the user stopped a walk)."""
     runs, cur = [], None
     for m, s in rows:
-        if cur and m - cur['last'] - 1 <= gap:
+        crosses = False
+        if cur:
+            # First break at or after the run's last minute; past it means a stop.
+            i = bisect.bisect_left(breaks, cur['last'])
+            crosses = i < len(breaks) and breaks[i] < m
+        if cur and m - cur['last'] - 1 <= gap and not crosses:
             cur['last'] = m
             cur['steps'] += s
         else:
@@ -84,9 +92,10 @@ def get_walks(limit=200):
     try:
         rows = conn.execute(
             'SELECT minute, steps FROM step_minutes WHERE steps > 0 ORDER BY minute').fetchall()
+        breaks = [r['minute'] for r in conn.execute('SELECT minute FROM walk_breaks ORDER BY minute')]
     finally:
         conn.close()
-    runs = _segments([(r['minute'], r['steps']) for r in rows], gap)
+    runs = _segments([(r['minute'], r['steps']) for r in rows], gap, breaks)
 
     def qualifies(run):
         minutes = run['last'] - run['first'] + 1
@@ -101,7 +110,9 @@ def get_walks(limit=200):
     gap_ms = int(gap * 60_000)
     now_ms = int(time.time() * 1000)
     weights = {}
-    if runs and last_step_ms and now_ms - last_step_ms <= gap_ms:
+    # A run that ends on a break was stopped by hand, so it's already finished.
+    stopped = bool(runs and breaks and breaks[-1] >= runs[-1]['last'])
+    if runs and not stopped and last_step_ms and now_ms - last_step_ms <= gap_ms:
         run = runs.pop()
         active = _describe(run, weights)
         minutes = active['minutes']
@@ -115,3 +126,20 @@ def get_walks(limit=200):
     finished = [r for r in reversed(runs) if qualifies(r)][:limit]
     walks = [_describe(r, weights) for r in finished]
     return active, walks, cfg
+
+
+def stop_active_walk():
+    """End the walk in progress at its latest minute, so it's kept as it is
+    and never merges with the steps that follow. Returns False when there was
+    no active walk."""
+    active, _, _ = get_walks(limit=0)
+    if not active:
+        return False
+    conn = get_db()
+    try:
+        last = conn.execute('SELECT MAX(minute) FROM step_minutes WHERE steps > 0').fetchone()[0]
+        conn.execute('INSERT OR IGNORE INTO walk_breaks(minute) VALUES (?)', (last,))
+        conn.commit()
+    finally:
+        conn.close()
+    return True

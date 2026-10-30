@@ -292,6 +292,12 @@ def init_db():
             minute INTEGER PRIMARY KEY,
             steps  INTEGER NOT NULL
         );
+
+        -- Walks the user stopped by hand: a walk never continues past one of
+        -- these minutes (same clock as step_minutes), however short the pause.
+        CREATE TABLE IF NOT EXISTS walk_breaks (
+            minute INTEGER PRIMARY KEY
+        );
     ''')
     conn.commit()
 

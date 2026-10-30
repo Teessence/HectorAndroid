@@ -84,10 +84,10 @@
           </div>
         </div>
         <div class="text-end text-nowrap">
-          <div class="fw-bold" style="color:#388bfd">{{ '{:,}'.format(w.steps) }} <span class="text-secondary fw-normal small">steps</span></div>
-          <div class="text-secondary small">{{ '{:,}'.format(w.per_hour) }}/h · {{ w.per_min }}/min</div>
-          <div class="fw-semibold mt-1" style="color:#f78536">{{ w.kcal }} <span class="text-secondary fw-normal small">kcal</span></div>
-          <div class="text-secondary small">{{ w.kcal_per_hour }}/h · {{ w.kcal_per_min }}/min</div>
+          <div class="fw-bold" style="color:#388bfd"><span class="hx-secret is-blurred">{{ '{:,}'.format(w.steps) }}</span> <span class="text-secondary fw-normal small">steps</span></div>
+          <div class="text-secondary small"><span class="hx-secret is-blurred">{{ '{:,}'.format(w.per_hour) }}/h · {{ w.per_min }}/min</span></div>
+          <div class="fw-semibold mt-1" style="color:#f78536"><span class="hx-secret is-blurred">{{ w.kcal }}</span> <span class="text-secondary fw-normal small">kcal</span></div>
+          <div class="text-secondary small"><span class="hx-secret is-blurred">{{ w.kcal_per_hour }}/h · {{ w.kcal_per_min }}/min</span></div>
         </div>
       </div>
       {% endfor %}
@@ -113,6 +113,40 @@
 {% endblock %}
 
 {% block scripts %}
+<style>
+  /* Numbers on Days and finished Walks start blurred on every visit (nothing
+     is saved). Tap one to show it, tap again to hide it. The active walk card
+     is never blurred. */
+  .hx-secret { transition: filter .2s; cursor: pointer; }
+  .hx-secret.is-blurred { filter: blur(7px); user-select: none; }
+</style>
+<script>
+(function () {
+  // Delegated, so rows added later by infinite scroll work too.
+  document.addEventListener('click', function (e) {
+    var el = e.target.closest('.hx-secret');
+    if (!el) return;
+    if (el.classList.contains('is-blurred')) {
+      el.classList.remove('is-blurred');
+    } else if (el.tagName !== 'INPUT') {
+      el.classList.add('is-blurred');   // fields stay visible while you edit
+    }
+  }, true);
+  // A steps field shows as soon as it's focused (tapping it focuses before
+  // the click lands), so one tap reveals it and starts editing.
+  document.addEventListener('focusin', function (e) {
+    if (e.target.classList && e.target.classList.contains('hx-secret')) {
+      e.target.classList.remove('is-blurred');
+    }
+  });
+  document.addEventListener('click', function (e) {
+    var unlock = e.target.closest('.unlock-btn');
+    if (!unlock) return;
+    var form = unlock.closest('form');
+    if (form) form.querySelectorAll('.hx-secret').forEach(function (el) { el.classList.remove('is-blurred'); });
+  });
+})();
+</script>
 <style>
   .active-walk { border: 1px solid rgba(63,185,80,.55); background: rgba(63,185,80,.06); }
   .walk-badge {
@@ -162,6 +196,8 @@
             '<div class="fw-semibold mt-2">Started ' + walk.start + ' · ' + walk.minutes + ' min</div>' +
             '<div class="small walk-ends" id="walkEnds"></div>' +
             '<div class="text-secondary small mt-1">' + note + '</div>' +
+            '<button type="button" class="btn btn-sm btn-outline-danger mt-2" id="stopWalk">' +
+              '<i class="bi bi-stop-fill me-1"></i>Stop walk</button>' +
           '</div>' +
           '<div class="text-end text-nowrap">' +
             '<div class="fw-bold" style="color:#388bfd">' + fmt(walk.steps) + ' <span class="text-secondary fw-normal small">steps</span></div>' +
@@ -206,6 +242,21 @@
       render();
     } catch (e) { /* keep showing the last known state */ }
   }
+
+  // Stop: the walk ends now as it is; steps after this start a new walk.
+  box.addEventListener('click', async function (e) {
+    var btn = e.target.closest('#stopWalk');
+    if (!btn) return;
+    var msg = walk && walk.qualifies
+      ? 'Stop this walk now? Steps after this will start a new walk.'
+      : 'Stop this walk now? It is too short or slow to count, so it won\'t be kept.';
+    if (!confirm(msg)) return;
+    btn.disabled = true;
+    try {
+      await fetch('/api/walks/stop', { method: 'POST' });
+    } catch (err) { /* reload shows whatever the server has */ }
+    location.reload();
+  });
 
   render();
   refresh();  // sync the clock straight away
