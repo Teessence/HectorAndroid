@@ -123,9 +123,10 @@ def record_reading(date_str, raw, boot, minutes='', last_step_ms=0):
         conn.close()
 
 
-def notification_text():
-    """The step counter notification's text (one item per line), built from
-    the same numbers as the Home Steps tile."""
+def notification_text(date_str):
+    """The step counter notification's text (one item per line) for date_str
+    (YYYY-MM-DD, the phone's today), built from the same numbers as the Home
+    Steps tile."""
     _ensure_schema()
     from home_calc import notification_lines
-    return '\n'.join(notification_lines())
+    return '\n'.join(notification_lines(date_str))

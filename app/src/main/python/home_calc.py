@@ -261,14 +261,14 @@ def _steps_status(conn, today, starting_weight, target_weight, setup_complete):
     return out
 
 
-def notification_lines():
-    """Lines for the step counter's notification, same numbers as Home."""
+def notification_lines(today):
+    """Lines for the step counter's notification on `today` (YYYY-MM-DD),
+    same numbers as Home."""
     conn = get_db()
     try:
         starting_weight = _f(get_setting('starting_weight'))
         target_weight = _f(get_setting('target_weight'))
         setup_complete = starting_weight is not None and get_setting('starting_date') is not None
-        today = date.today().strftime('%Y-%m-%d')
         s = _steps_status(conn, today, starting_weight, target_weight, setup_complete)
     finally:
         conn.close()

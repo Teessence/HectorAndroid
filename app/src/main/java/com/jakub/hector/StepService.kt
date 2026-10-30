@@ -19,6 +19,7 @@ import android.os.IBinder
 import android.os.Looper
 import android.os.SystemClock
 import android.provider.Settings
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
@@ -69,6 +70,7 @@ class StepService : Service(), SensorEventListener {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startForegroundInternal()
+        handler.post(refreshNotification)  // e.g. opening the app shows fresh numbers
         return START_STICKY
     }
 
@@ -232,10 +234,15 @@ class StepService : Service(), SensorEventListener {
 
     /** The last text shown, if it's from today; else just today's count. */
     private fun cachedText(): String {
-        val today = LocalDate.now().toString()
-        if (prefs.getString(KEY_NOTIF_DAY, null) == today) {
+        if (prefs.getString(KEY_NOTIF_DAY, null) == LocalDate.now().toString()) {
             prefs.getString(KEY_NOTIF_TEXT, null)?.let { return it }
         }
+        return countLine()
+    }
+
+    /** Today's count as last saved by sendReading. */
+    private fun countLine(): String {
+        val today = LocalDate.now().toString()
         val steps = if (prefs.getString(KEY_DAY, null) == today) prefs.getLong(KEY_ACCUM, 0L) else 0L
         return String.format("Steps today: %,d", steps)
     }
@@ -259,29 +266,34 @@ class StepService : Service(), SensorEventListener {
         override fun run() {
             handler.removeCallbacks(this)
             handler.postDelayed(this, NOTIF_REFRESH_MS)
+            val day = LocalDate.now().toString()
             dbExecutor.execute {
-                try {
-                    if (!Python.isStarted()) return@execute
-                    val text = Python.getInstance()
+                val text = try {
+                    Python.getInstance()
                         .getModule("mobile_steps")
-                        .callAttr("notification_text")
+                        .callAttr("notification_text", day)
                         .toString()
-                    handler.post {
-                        prefs.edit()
-                            .putString(KEY_NOTIF_TEXT, text)
-                            .putString(KEY_NOTIF_DAY, LocalDate.now().toString())
-                            .apply()
-                        getSystemService(NotificationManager::class.java)
-                            .notify(NOTIF_ID, buildNotification(text))
-                    }
-                } catch (e: Exception) {
-                    // Keep the last text; the next refresh tries again.
+                } catch (e: Throwable) {
+                    // Show the count we have plus why progress is missing; the
+                    // next refresh tries again.
+                    Log.w(TAG, "notification_text failed", e)
+                    countLine() +
+                        "\nCouldn't load progress: " + (e.message ?: e.javaClass.simpleName).take(200)
+                }
+                handler.post {
+                    prefs.edit()
+                        .putString(KEY_NOTIF_TEXT, text)
+                        .putString(KEY_NOTIF_DAY, day)
+                        .apply()
+                    getSystemService(NotificationManager::class.java)
+                        .notify(NOTIF_ID, buildNotification(text))
                 }
             }
         }
     }
 
     companion object {
+        private const val TAG = "StepService"
         private const val CHANNEL_ID = "hector_steps"
         private const val NOTIF_ID = 1
         private const val PUSH_THROTTLE_MS = 5000L
