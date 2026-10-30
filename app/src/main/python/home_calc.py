@@ -232,6 +232,58 @@ def _range_totals(conn, start, end):
     return total
 
 
+def _steps_status(conn, today, starting_weight, target_weight, setup_complete):
+    """The Steps tile numbers. Steps still needed from this morning's weight,
+    minus what's been walked today: every step taken today comes straight off
+    the number. `percent` is progress from starting to target weight;
+    `today_percent` is the part of it today's steps earned."""
+    trow = conn.execute('SELECT steps FROM daily_steps WHERE date=?', (today,)).fetchone()
+    today_steps = int(trow['steps']) if trow and trow['steps'] else 0
+    out = {'today_steps': today_steps, 'morning_weight': None, 'weight_now': None,
+           'steps_required': None, 'percent': None, 'today_percent': None}
+    if not (setup_complete and target_weight is not None):
+        return out
+    morning_weight = _weight_this_morning(conn, today)
+    if morning_weight is None:
+        return out
+    from_morning = _steps_to_target(morning_weight, target_weight)
+    steps_required = max(0, from_morning - today_steps) if from_morning is not None else None
+    weight_now = morning_weight - today_steps * calories_per_step(morning_weight) / 7700
+    percent = today_percent = None
+    if starting_weight is not None and starting_weight > target_weight:
+        span = starting_weight - target_weight
+        percent = max(0.0, min(100.0, (starting_weight - weight_now) / span * 100.0))
+        today_percent = (morning_weight - weight_now) / span * 100.0
+    elif steps_required == 0:
+        percent = 100.0
+    out.update(morning_weight=morning_weight, weight_now=weight_now,
+               steps_required=steps_required, percent=percent, today_percent=today_percent)
+    return out
+
+
+def notification_lines():
+    """Lines for the step counter's notification, same numbers as Home."""
+    conn = get_db()
+    try:
+        starting_weight = _f(get_setting('starting_weight'))
+        target_weight = _f(get_setting('target_weight'))
+        setup_complete = starting_weight is not None and get_setting('starting_date') is not None
+        today = date.today().strftime('%Y-%m-%d')
+        s = _steps_status(conn, today, starting_weight, target_weight, setup_complete)
+    finally:
+        conn.close()
+    first = 'Steps today: {:,}'.format(s['today_steps'])
+    if s['today_percent'] is not None:
+        first += ' (%s%%)' % _pct_str(s['today_percent'])
+    lines = [first]
+    if s['steps_required'] is not None:
+        lines.append('Steps left: {:,}'.format(s['steps_required']))
+    if s['percent'] is not None:
+        lines.append('Progress: %s%% / 100%% (%s%%)'
+                     % (_pct_str(s['percent']), _pct_str(100.0 - s['percent'])))
+    return lines
+
+
 def compute_home_status(range_key='today', range_from=None, range_to=None):
     conn = get_db()
     try:
@@ -251,28 +303,12 @@ def compute_home_status(range_key='today', range_from=None, range_to=None):
         start_s, end_s = r_start.strftime('%Y-%m-%d'), r_end.strftime('%Y-%m-%d')
         days = (r_end - r_start).days + 1
 
-        trow = conn.execute('SELECT steps FROM daily_steps WHERE date=?', (today,)).fetchone()
-        today_steps = int(trow['steps']) if trow and trow['steps'] else 0
-
-        # ── Steps tile ──────────────────────────────────────────────────────
-        # Steps still needed from this morning's weight, minus what's been
-        # walked today: every step taken today comes straight off the number.
-        morning_weight = None
-        weight_now = None
-        steps_required = None
-        percent = None
-        if setup_complete and target_weight is not None:
-            morning_weight = _weight_this_morning(conn, today)
-            if morning_weight is not None:
-                from_morning = _steps_to_target(morning_weight, target_weight)
-                if from_morning is not None:
-                    steps_required = max(0, from_morning - today_steps)
-                weight_now = morning_weight - today_steps * calories_per_step(morning_weight) / 7700
-                if starting_weight is not None and starting_weight > target_weight:
-                    lost = starting_weight - weight_now
-                    percent = max(0.0, min(100.0, lost / (starting_weight - target_weight) * 100.0))
-                elif steps_required == 0:
-                    percent = 100.0
+        steps = _steps_status(conn, today, starting_weight, target_weight, setup_complete)
+        today_steps = steps['today_steps']
+        morning_weight = steps['morning_weight']
+        weight_now = steps['weight_now']
+        steps_required = steps['steps_required']
+        percent = steps['percent']
 
         srow = conn.execute(
             'SELECT COALESCE(SUM(steps), 0) AS s FROM daily_steps WHERE date BETWEEN ? AND ?',

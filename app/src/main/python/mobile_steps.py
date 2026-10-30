@@ -121,3 +121,11 @@ def record_reading(date_str, raw, boot, minutes='', last_step_ms=0):
         return current
     finally:
         conn.close()
+
+
+def notification_text():
+    """The step counter notification's text (one item per line), built from
+    the same numbers as the Home Steps tile."""
+    _ensure_schema()
+    from home_calc import notification_lines
+    return '\n'.join(notification_lines())

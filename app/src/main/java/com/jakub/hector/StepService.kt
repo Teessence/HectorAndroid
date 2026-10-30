@@ -64,6 +64,7 @@ class StepService : Service(), SensorEventListener {
         stepSensor?.let { sensor ->
             sensorManager?.registerListener(this, sensor, SensorManager.SENSOR_DELAY_NORMAL)
         }
+        handler.post(refreshNotification)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -105,6 +106,7 @@ class StepService : Service(), SensorEventListener {
     override fun onDestroy() {
         sensorManager?.unregisterListener(this)
         handler.removeCallbacks(sendLater)
+        handler.removeCallbacks(refreshNotification)
         sendReading(force = true)  // queued before the executor shuts down below
         dbExecutor.shutdown()
         super.onDestroy()
@@ -181,7 +183,6 @@ class StepService : Service(), SensorEventListener {
                         }
                         savePendingMinutes()
                         prefs.edit().putString(KEY_DAY, day).putLong(KEY_ACCUM, total).apply()
-                        updateNotification(total)
                     }
                 }
             } catch (e: Exception) {
@@ -212,7 +213,7 @@ class StepService : Service(), SensorEventListener {
         getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
     }
 
-    private fun buildNotification(steps: Long): Notification {
+    private fun buildNotification(text: String): Notification {
         val contentIntent = PendingIntent.getActivity(
             this, 0,
             Intent(this, MainActivity::class.java),
@@ -220,7 +221,8 @@ class StepService : Service(), SensorEventListener {
         )
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Hector")
-            .setContentText(String.format("%,d steps today", steps))
+            .setContentText(text.substringBefore('\n'))  // collapsed: first line only
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setSmallIcon(R.drawable.ic_stat_steps)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
@@ -228,23 +230,55 @@ class StepService : Service(), SensorEventListener {
             .build()
     }
 
+    /** The last text shown, if it's from today; else just today's count. */
+    private fun cachedText(): String {
+        val today = LocalDate.now().toString()
+        if (prefs.getString(KEY_NOTIF_DAY, null) == today) {
+            prefs.getString(KEY_NOTIF_TEXT, null)?.let { return it }
+        }
+        val steps = if (prefs.getString(KEY_DAY, null) == today) prefs.getLong(KEY_ACCUM, 0L) else 0L
+        return String.format("Steps today: %,d", steps)
+    }
+
     private fun startForegroundInternal() {
-        val steps = if (prefs.getString(KEY_DAY, null) == LocalDate.now().toString()) prefs.getLong(KEY_ACCUM, 0L) else 0L
         val type = if (Build.VERSION.SDK_INT >= 34) {
             ServiceInfo.FOREGROUND_SERVICE_TYPE_HEALTH
         } else {
             0
         }
         try {
-            ServiceCompat.startForeground(this, NOTIF_ID, buildNotification(steps), type)
+            ServiceCompat.startForeground(this, NOTIF_ID, buildNotification(cachedText()), type)
         } catch (e: Exception) {
             stopSelf()
         }
     }
 
-    private fun updateNotification(steps: Long) {
-        getSystemService(NotificationManager::class.java)
-            .notify(NOTIF_ID, buildNotification(steps))
+    // Rebuilt from the database every 15 minutes (not on every step), using
+    // the same numbers as the Home Steps tile.
+    private val refreshNotification = object : Runnable {
+        override fun run() {
+            handler.removeCallbacks(this)
+            handler.postDelayed(this, NOTIF_REFRESH_MS)
+            dbExecutor.execute {
+                try {
+                    if (!Python.isStarted()) return@execute
+                    val text = Python.getInstance()
+                        .getModule("mobile_steps")
+                        .callAttr("notification_text")
+                        .toString()
+                    handler.post {
+                        prefs.edit()
+                            .putString(KEY_NOTIF_TEXT, text)
+                            .putString(KEY_NOTIF_DAY, LocalDate.now().toString())
+                            .apply()
+                        getSystemService(NotificationManager::class.java)
+                            .notify(NOTIF_ID, buildNotification(text))
+                    }
+                } catch (e: Exception) {
+                    // Keep the last text; the next refresh tries again.
+                }
+            }
+        }
     }
 
     companion object {
@@ -257,6 +291,9 @@ class StepService : Service(), SensorEventListener {
         private const val KEY_LAST_RAW = "last_raw"
         private const val KEY_PENDING_MINUTES = "pending_minutes"
         private const val KEY_LAST_STEP_MS = "last_step_ms"
+        private const val KEY_NOTIF_TEXT = "notif_text"
+        private const val KEY_NOTIF_DAY = "notif_day"
+        private const val NOTIF_REFRESH_MS = 15 * 60_000L
 
         fun start(context: Context) {
             ContextCompat.startForegroundService(
