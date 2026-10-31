@@ -20,6 +20,7 @@ from database import get_db, get_setting, set_setting
 DEFAULT_PLAN = [
     ('fsquat', 'Front squat', 3, 8, 20, 150, 5, 'load'),
     ('floorpress', 'Floor press', 3, 8, 20, 120, 2.5, 'load'),
+    ('pushup', 'Push-ups', 3, 10, 0, 90, 0, 'reps'),
     ('row', 'Bent-over row', 3, 10, 20, 120, 2.5, 'load'),
     ('rdl', 'Romanian deadlift', 3, 10, 20, 120, 5, 'load'),
     ('ohp', 'Overhead press', 3, 8, 20, 120, 2.5, 'load'),
@@ -54,13 +55,20 @@ def _week_start(d):
 # ── Plan ──────────────────────────────────────────────────────────────────────
 
 def _ensure_plan(conn):
-    if conn.execute('SELECT 1 FROM strength_exercises LIMIT 1').fetchone():
+    """Add any default exercise the plan doesn't have yet (all of them on a new
+    install; later additions such as push-ups on an existing one), keeping the
+    default order. Existing exercises keep their targets."""
+    have = {r['key'] for r in conn.execute('SELECT key FROM strength_exercises')}
+    missing = [d for d in DEFAULT_PLAN if d[0] not in have]
+    if not missing:
         return
-    for i, (key, name, sets, reps, w, rest, inc, track) in enumerate(DEFAULT_PLAN):
+    for key, name, sets, reps, w, rest, inc, track in missing:
         conn.execute('''INSERT INTO strength_exercises
                         (key, name, position, sets, reps, weight_kg, rest_s, increment_kg, track)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-                     (key, name, i, sets, reps, w, rest, inc, track))
+                        VALUES (?, ?, 0, ?, ?, ?, ?, ?, ?)''',
+                     (key, name, sets, reps, w, rest, inc, track))
+    for i, d in enumerate(DEFAULT_PLAN):
+        conn.execute('UPDATE strength_exercises SET position=? WHERE key=?', (i, d[0]))
     conn.commit()
 
 

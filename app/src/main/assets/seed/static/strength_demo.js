@@ -55,6 +55,22 @@
               'Pause for a moment, then press it back up.'],
       mistake: 'Bouncing your elbows off the floor. Let them settle and press from a dead stop.'
     },
+    pushup: {
+      name: 'Push-ups',
+      noBar: true,
+      // Plank on hands and toes; toes behind the ankles on the floor.
+      side: [{ h:[160,121], s:[146,128], e:[146,156], w:[146,184], hp:[96,150], k:[70,164], a:[44,178], f:[36,186] },
+             { h:[160,163], s:[146,168], e:[126,160], w:[146,184], hp:[96,172], k:[70,177], a:[44,180], f:[36,186] }],
+      // From the front: arms to the floor, body going away from the viewer.
+      front: { noFeet: true,
+               poses: [{ h:[100,110], s:[24,124], e:[30,152], w:[34,182], hp:[12,116], k:[12,112], a:[12,110] },
+                       { h:[100,150], s:[24,164], e:[46,164], w:[34,182], hp:[12,154], k:[12,150], a:[12,148] }] },
+      steps: ['Hands on the floor a little wider than your shoulders, body in a straight line from head to heels.',
+              'Squeeze your glutes and stomach to keep that line.',
+              'Lower your chest to just above the floor, elbows about 45° from your body.',
+              'Push the floor away until your arms are straight. Too hard: hands on a chair or knees down. Too easy: feet on a chair.'],
+      mistake: 'Hips sagging or sticking up. Keep the straight line and do fewer reps instead.'
+    },
     row: {
       name: 'Bent-over row',
       side: [{ h:[132,72], s:[122,80], e:[122,110], w:[120,140], hp:[76,108], k:[108,145], a:[100,180], bar:[120,140] },
@@ -170,6 +186,7 @@
     setLine(parts.spine, [100, P.s[1]], [100, P.hp[1]]);
     setLine(parts.neck, [100, P.s[1]], P.h);
     parts.head.setAttribute('cx', P.h[0]); parts.head.setAttribute('cy', P.h[1]);
+    if (P.bar === undefined) return;  // bodyweight exercise: no bar
     setLine(parts.bar, [24, P.bar], [176, P.bar]);
     parts.plates[0].setAttribute('x', 26); parts.plates[1].setAttribute('x', 166);
     parts.plates.forEach(function (r) { r.setAttribute('y', P.bar - 16); });
@@ -206,6 +223,11 @@
     for (var i = x.side.length - 2; i > 0; i--) seq.push(i);
     var d = { host: host, sp: buildSide(side), fp: buildFront(front, x.front), x: x, seq: seq,
               playing: !reduce, t0: performance.now(), elapsed: 0 };
+    if (x.noBar) {
+      d.sp.plate.style.display = d.sp.hub.style.display = 'none';
+      d.fp.bar.style.display = 'none';
+      d.fp.plates.forEach(function (r) { r.style.display = 'none'; });
+    }
     drawSide(d.sp, x.side[0]);
     drawFront(d.fp, x.front.poses[0]);
     var btn = host.querySelector('.sd-toggle');
