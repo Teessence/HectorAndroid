@@ -205,12 +205,16 @@ def create_app():
 
     # ── Setup ─────────────────────────────────────────────────────────────────
 
+    import strength as strength_mod
+    strength_mod.register(app)
+
     @app.route('/')
     def index():
         import home_calc
         status = home_calc.compute_home_status(*_home_range_args())
         return render_template('home.html', active_page='home', focus=None,
-                               show_weight=get_setting('home_show_weight', '1') != '0', **status)
+                               show_weight=get_setting('home_show_weight', '1') != '0',
+                               strength=strength_mod.stats(weeks=4), **status)
 
     @app.route('/nutrients/<group>')
     def nutrients_full(group):
@@ -379,6 +383,8 @@ def create_app():
         conn.execute('DELETE FROM step_minutes')       # walks are built from these
         conn.execute('DELETE FROM walking_sessions')   # old walk format, else re-imported
         conn.execute('DELETE FROM walk_breaks')
+        conn.execute('DELETE FROM strength_sets')      # workouts go; the plan stays
+        conn.execute('DELETE FROM strength_sessions')
         # The phone's last raw counter reading ('step_sensor_state') is kept on
         # purpose: it lets steps taken after the reset count from this moment.
         conn.execute("DELETE FROM settings WHERE key = 'walk_last_step_ms'")
@@ -388,7 +394,7 @@ def create_app():
                 (starting_date, sw))
         conn.commit()
         conn.close()
-        flash('Calibrated — diary, steps, walks and hydration wiped. Starting fresh from your settings.', 'success')
+        flash('Calibrated — diary, steps, walks, hydration and workouts wiped. Starting fresh from your settings.', 'success')
         return redirect(url_for('settings'))
 
     @app.route('/settings/ai', methods=['POST'])

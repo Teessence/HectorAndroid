@@ -1,0 +1,355 @@
+{% extends 'base.html' %}
+{% block title %}Workout · Hector{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="/static/strength.css">
+<div class="mx-auto" style="max-width:640px">
+
+  <div class="d-flex align-items-center gap-2 mb-3">
+    <a href="/strength" class="btn btn-sm btn-outline-secondary" aria-label="Back to Strength"><i class="bi bi-arrow-left"></i></a>
+    <h5 class="fw-bold mb-0 flex-grow-1">
+      {% if w.finished_at %}Workout · {{ w.date }}{% else %}Workout in progress{% endif %}
+    </h5>
+    {% if not w.finished_at %}
+    <form method="post" action="/strength/session/{{ w.id }}/finish" id="finishForm">
+      <button class="btn btn-sm btn-outline-success" id="finishEarly">Finish</button>
+    </form>
+    {% endif %}
+  </div>
+
+  {% if w.finished_at %}
+  {# ── Summary ─────────────────────────────────────────────────────────────── #}
+  <div class="st-grid mb-3">
+    <div class="st-stat"><div class="v">{{ '{:,}'.format(w.volume|round|int) }} <span class="fs-6 text-secondary">kg</span></div><div class="l">Lifted</div></div>
+    <div class="st-stat"><div class="v">{{ w.set_count }}</div><div class="l">Sets</div></div>
+    <div class="st-stat"><div class="v">{{ w.rep_count }}</div><div class="l">Reps</div></div>
+    <div class="st-stat"><div class="v">{{ w.minutes if w.minutes is not none else '—' }}</div><div class="l">Minutes</div></div>
+  </div>
+  {% if w.records %}
+  <div class="alert alert-success py-2"><i class="bi bi-trophy-fill me-1"></i>New best: {{ w.records|join(', ') }}</div>
+  {% endif %}
+  {% for g in w.exercises %}
+  <div class="card mb-2"><div class="card-body py-2">
+    <div class="d-flex justify-content-between align-items-baseline">
+      <div class="fw-semibold">{{ g.name }}{% if g.record %} <i class="bi bi-trophy-fill text-warning small" title="New best"></i>{% endif %}</div>
+      <div class="small text-secondary st-num">{% if g.track == 'load' %}{{ '{:,}'.format(g.volume|round|int) }} kg · e1RM {{ g.best_e1rm|round(1)|kg }} kg{% else %}{{ g.reps }} reps{% endif %}</div>
+    </div>
+    <div class="d-flex flex-wrap gap-1 mt-1">
+      {% for x in g.sets %}
+      <span class="ingredient-chip st-num">{% if g.track == 'load' %}{{ x.weight_kg|kg }} kg × {% endif %}{{ x.reps }}{% if x.target_reps and x.reps < x.target_reps %} <span class="text-warning">/{{ x.target_reps }}</span>{% endif %}</span>
+      {% endfor %}
+    </div>
+  </div></div>
+  {% else %}
+  <div class="text-secondary">No sets were logged.</div>
+  {% endfor %}
+  <form method="post" action="/strength/session/{{ w.id }}/delete" class="mt-3" id="deleteForm">
+    <button type="button" class="btn btn-sm btn-outline-danger" id="deleteBtn"><i class="bi bi-trash me-1"></i>Delete workout</button>
+    <span class="small text-secondary ms-2" id="deleteAsk" hidden>Tap again to delete for good.</span>
+  </form>
+
+  {% else %}
+  {# ── Guided workout ──────────────────────────────────────────────────────── #}
+  <div id="guide"></div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+{% if w.finished_at %}
+<script>
+(function () {
+  // Two taps to delete (the WebView has no confirm dialog we rely on).
+  var btn = document.getElementById('deleteBtn'), armed = false;
+  btn.addEventListener('click', function () {
+    if (armed) { document.getElementById('deleteForm').submit(); return; }
+    armed = true;
+    btn.textContent = 'Delete';
+    document.getElementById('deleteAsk').hidden = false;
+  });
+})();
+</script>
+{% else %}
+<style>
+  .wg-progress { display: flex; gap: 4px; margin-bottom: .75rem; }
+  .wg-progress i { flex: 1; height: 5px; border-radius: 3px; background: var(--hx-chip); }
+  .wg-progress i.done { background: var(--st-accent); }
+  .wg-progress i.now { background: var(--st-accent); opacity: .45; }
+  .wg-step { display: flex; align-items: center; gap: .5rem; }
+  .wg-step button { width: 44px; height: 44px; font-size: 1.2rem; }
+  .wg-step input { text-align: center; font-size: 1.4rem; font-weight: 700; height: 44px; max-width: 110px; }
+  .wg-timer { font-size: 4.2rem; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1; }
+  .wg-ring { height: 8px; border-radius: 99px; background: var(--hx-chip); overflow: hidden; }
+  .wg-ring > i { display: block; height: 100%; background: var(--st-accent); transition: width .25s linear; }
+  .wg-set { display: flex; justify-content: space-between; align-items: center; padding: .3rem 0; border-top: 1px solid var(--hx-border); font-variant-numeric: tabular-nums; }
+  .wg-set button { border: 0; background: none; color: #8b949e; padding: 0 .3rem; }
+</style>
+<script src="/static/strength_demo.js"></script>
+<script>
+(function () {
+  var SESSION = {{ w.id }};
+  var plan = {{ plan | tojson }};
+  var REST_BETWEEN = {{ rest_between }};
+  // Sets already logged in this workout (when resuming), per exercise.
+  var logged = {};
+  plan.forEach(function (p) { logged[p.key] = []; });
+  {% for g in w.exercises %}{% for x in g.sets %}
+  if (logged[{{ x.exercise_key|tojson }}]) logged[{{ x.exercise_key|tojson }}].push({ id: {{ x.id }}, reps: {{ x.reps }}, weight: {{ x.weight_kg }} });
+  {% endfor %}{% endfor %}
+
+  var box = document.getElementById('guide');
+  var store = 'hx-workout-' + SESSION;
+  function load() { try { return JSON.parse(sessionStorage.getItem(store) || '{}'); } catch (e) { return {}; } }
+  function save(st) { try { sessionStorage.setItem(store, JSON.stringify(st)); } catch (e) {} }
+  // { skipped: [keys], sets: {key: n}, restUntil: ms, restTotal: s, restNext: label, restFor: key }
+  var state = load();
+  state.skipped = state.skipped || [];
+  state.sets = state.sets || {};
+
+  // Sets for an exercise in this workout: the plan's, unless changed here.
+  function setsFor(p) { return state.sets[p.key] || p.sets; }
+  function changeSets(p, delta) {
+    // Never fewer than what's already logged (or 1); never more than 20.
+    var n = Math.max(Math.max(1, logged[p.key].length), Math.min(20, setsFor(p) + delta));
+    state.sets[p.key] = n;
+    save(state);
+  }
+
+  function fmtKg(v) { return (Math.round(v * 100) / 100).toString(); }
+  function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+
+  // The exercise to do now: the first one with sets left that wasn't skipped.
+  function current() {
+    for (var i = 0; i < plan.length; i++) {
+      var p = plan[i];
+      if (state.skipped.indexOf(p.key) >= 0) continue;
+      if (logged[p.key].length < setsFor(p)) return i;
+    }
+    return -1;
+  }
+
+  function progressBar(idx) {
+    return '<div class="wg-progress">' + plan.map(function (p, i) {
+      var done = logged[p.key].length >= setsFor(p) || state.skipped.indexOf(p.key) >= 0;
+      return '<i class="' + (done ? 'done' : (i === idx ? 'now' : '')) + '" title="' + esc(p.name) + '"></i>';
+    }).join('') + '</div>';
+  }
+
+  // ── Rest timer ─────────────────────────────────────────────────────────────
+  var tick = null;
+  function beep() {
+    try { if (navigator.vibrate) navigator.vibrate([200, 100, 200]); } catch (e) {}
+    try {
+      var ctx = new (window.AudioContext || window.webkitAudioContext)();
+      [0, .25].forEach(function (t) {
+        var o = ctx.createOscillator(), g = ctx.createGain();
+        o.frequency.value = 880; g.gain.value = .25;
+        o.connect(g); g.connect(ctx.destination);
+        o.start(ctx.currentTime + t); o.stop(ctx.currentTime + t + .15);
+      });
+    } catch (e) {}
+  }
+  function startRest(seconds, nextLabel, forKey) {
+    state.restUntil = Date.now() + seconds * 1000;
+    state.restTotal = seconds;
+    state.restNext = nextLabel;
+    state.restFor = forKey;   // exercise just finished, if this rest leads to the next one
+    save(state);
+    render();
+  }
+  function endRest(silent) {
+    delete state.restUntil;
+    save(state);
+    if (!silent) beep();
+    render();
+  }
+  function renderRest() {
+    var left = Math.max(0, Math.round((state.restUntil - Date.now()) / 1000));
+    box.innerHTML = progressBar(current()) +
+      '<div class="card"><div class="card-body text-center py-4">' +
+        '<div class="text-secondary text-uppercase small fw-semibold" style="letter-spacing:.1em">Rest</div>' +
+        '<div class="wg-timer my-2" id="restLeft"></div>' +
+        '<div class="wg-ring mb-3"><i id="restBar"></i></div>' +
+        '<div class="text-secondary mb-3">Next: <span class="text-body-emphasis fw-semibold">' + esc(state.restNext || '') + '</span></div>' +
+        '<div class="d-flex justify-content-center gap-2">' +
+          '<button class="btn btn-outline-secondary" data-act="less">−15 s</button>' +
+          '<button class="btn btn-outline-secondary" data-act="more">+15 s</button>' +
+          '<button class="btn btn-primary" data-act="skip">Skip rest</button>' +
+        '</div>' +
+        (state.restFor ? '<button class="btn btn-link btn-sm mt-3" data-act="oneMore">One more set of ' +
+          esc((plan.filter(function (p) { return p.key === state.restFor; })[0] || {}).name || '') + '</button>' : '') +
+      '</div></div>';
+    function upd() {
+      var l = Math.max(0, (state.restUntil - Date.now()) / 1000);
+      var s = Math.ceil(l);
+      document.getElementById('restLeft').textContent = Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+      document.getElementById('restBar').style.width = (state.restTotal ? (l / state.restTotal * 100) : 0) + '%';
+      if (l <= 0) { clearInterval(tick); tick = null; endRest(false); }
+    }
+    clearInterval(tick);
+    tick = setInterval(upd, 250);
+    upd();
+  }
+
+  // ── Exercise screen ────────────────────────────────────────────────────────
+  function renderExercise(idx) {
+    var p = plan[idx], sets = logged[p.key], n = sets.length + 1;
+    var info = HectorDemo.info[p.key] || { steps: [], mistake: '' };
+    var lastW = sets.length ? sets[sets.length - 1].weight : p.weight_kg;
+    var load = p.track === 'load';
+    box.innerHTML = progressBar(idx) +
+      '<div class="card"><div class="card-body">' +
+        '<div class="d-flex justify-content-between align-items-baseline">' +
+          '<div class="small text-secondary">Exercise ' + (idx + 1) + ' of ' + plan.length + '</div>' +
+          '<button class="btn btn-link btn-sm p-0 text-secondary" data-act="skipex">Skip exercise</button>' +
+        '</div>' +
+        '<h4 class="fw-bold mb-0">' + esc(p.name) + '</h4>' +
+        '<div class="d-flex align-items-center flex-wrap gap-2 mb-2">' +
+          '<span class="st-accent fw-semibold">Set ' + n + ' of ' + setsFor(p) + ' · target ' + p.reps + ' reps' + (load ? ' @ ' + fmtKg(p.weight_kg) + ' kg' : '') + '</span>' +
+          '<span class="btn-group btn-group-sm" role="group" aria-label="Number of sets">' +
+            '<button class="btn btn-outline-secondary py-0" data-act="s-" aria-label="One set fewer">− set</button>' +
+            '<button class="btn btn-outline-secondary py-0" data-act="s+" aria-label="One more set">+ set</button>' +
+          '</span>' +
+        '</div>' +
+        '<div id="exDemo" class="mb-2" style="max-width:380px"></div>' +
+        '<details class="mb-3"><summary class="small text-secondary">How to do it</summary>' +
+          '<ol class="st-cues mt-2">' + info.steps.map(function (s) { return '<li>' + esc(s) + '</li>'; }).join('') + '</ol>' +
+          '<div class="st-mistake mt-1">Avoid: ' + esc(info.mistake) + '</div></details>' +
+        '<div class="d-flex flex-wrap gap-4 mb-3">' +
+          (load ?
+          '<div><label class="small text-secondary d-block mb-1" for="wIn">Weight (kg)</label><div class="wg-step">' +
+            '<button class="btn btn-outline-secondary" data-act="w-">−</button>' +
+            '<input class="form-control" id="wIn" type="text" inputmode="decimal" value="' + fmtKg(lastW) + '">' +
+            '<button class="btn btn-outline-secondary" data-act="w+">+</button></div></div>' : '') +
+          '<div><label class="small text-secondary d-block mb-1" for="rIn">Reps done</label><div class="wg-step">' +
+            '<button class="btn btn-outline-secondary" data-act="r-">−</button>' +
+            '<input class="form-control" id="rIn" type="text" inputmode="numeric" value="' + p.reps + '">' +
+            '<button class="btn btn-outline-secondary" data-act="r+">+</button></div></div>' +
+        '</div>' +
+        '<button class="btn btn-primary btn-lg w-100" data-act="done"><i class="bi bi-check-lg me-1"></i>Set done</button>' +
+        '<div class="small text-danger mt-2" id="err" hidden></div>' +
+        (sets.length ? '<div class="mt-3 small">' + sets.map(function (s, i) {
+          return '<div class="wg-set"><span>Set ' + (i + 1) + ': ' + (load ? fmtKg(s.weight) + ' kg × ' : '') + s.reps + ' reps</span>' +
+                 '<button data-act="del" data-id="' + s.id + '" aria-label="Delete set ' + (i + 1) + '"><i class="bi bi-x-lg"></i></button></div>';
+        }).join('') + '</div>' : '') +
+      '</div></div>';
+    HectorDemo.mount(document.getElementById('exDemo'), p.key);
+  }
+
+  function renderDone() {
+    var total = 0, setsN = 0;
+    plan.forEach(function (p) { logged[p.key].forEach(function (s) { setsN++; if (p.track === 'load') total += s.weight * s.reps; }); });
+    var lastEx = plan.filter(function (p) { return p.key === state.lastKey; })[0];
+    box.innerHTML = progressBar(-1) +
+      '<div class="card"><div class="card-body text-center py-4">' +
+        '<div class="display-6 mb-2"><i class="bi bi-check-circle-fill text-success"></i></div>' +
+        '<h4 class="fw-bold">All exercises done</h4>' +
+        '<div class="text-secondary mb-3">' + setsN + ' sets · ' + Math.round(total).toLocaleString('en-US') + ' kg lifted</div>' +
+        '<button class="btn btn-primary btn-lg" data-act="finish">Finish workout</button>' +
+        (state.skipped.length ? '<div class="mt-3"><button class="btn btn-link btn-sm" data-act="unskip">Go back to skipped exercises</button></div>' : '') +
+        (lastEx ? '<div class="mt-2"><button class="btn btn-link btn-sm" data-act="oneMore" data-key="' + esc(lastEx.key) + '">One more set of ' + esc(lastEx.name) + '</button></div>' : '') +
+      '</div></div>';
+  }
+
+  function render() {
+    if (state.restUntil && state.restUntil > Date.now()) { renderRest(); return; }
+    if (state.restUntil) { delete state.restUntil; save(state); }
+    clearInterval(tick); tick = null;
+    var idx = current();
+    if (idx < 0) renderDone(); else renderExercise(idx);
+  }
+
+  function nextLabel() {
+    var idx = current();
+    if (idx < 0) return 'Finish workout';
+    var p = plan[idx];
+    return p.name + ' · set ' + (logged[p.key].length + 1) + ' of ' + setsFor(p);
+  }
+
+  function step(id, delta, decimals) {
+    var el = document.getElementById(id);
+    var v = parseFloat(String(el.value).replace(',', '.')) || 0;
+    v = Math.max(0, v + delta);
+    el.value = decimals ? fmtKg(v) : String(Math.round(v));
+  }
+
+  box.addEventListener('click', async function (e) {
+    var b = e.target.closest('[data-act]');
+    if (!b) return;
+    var act = b.dataset.act, idx = current(), p = plan[idx];
+    if (act === 'w-' || act === 'w+') step('wIn', act === 'w+' ? 2.5 : -2.5, true);  // smallest plate pair
+    else if (act === 'r-' || act === 'r+') step('rIn', act === 'r+' ? 1 : -1, false);
+    else if (act === 'less') { state.restUntil -= 15000; state.restTotal = Math.max(1, state.restTotal - 15); save(state); }
+    else if (act === 'more') { state.restUntil += 15000; state.restTotal += 15; save(state); }
+    else if (act === 'skip') endRest(true);
+    else if (act === 's-' || act === 's+') { changeSets(p, act === 's+' ? 1 : -1); render(); }
+    else if (act === 'oneMore') {
+      // During the rest after an exercise's last set, or on the done screen:
+      // go back for one extra set of the exercise just finished.
+      var key = b.dataset.key || state.restFor;
+      var q = plan.filter(function (x) { return x.key === key; })[0];
+      if (q) {
+        changeSets(q, 1);
+        state.skipped = state.skipped.filter(function (k) { return k !== key; });
+        state.restFor = null;
+        if (state.restUntil) state.restNext = nextLabel();
+        save(state);
+      }
+      render();
+    }
+    else if (act === 'skipex') { state.skipped.push(p.key); save(state); render(); }
+    else if (act === 'unskip') { state.skipped = []; save(state); render(); }
+    else if (act === 'finish') document.getElementById('finishForm').submit();
+    else if (act === 'del') {
+      var id = +b.dataset.id;
+      b.disabled = true;
+      try {
+        var r = await fetch('/api/strength/set/' + id + '/delete', { method: 'POST' });
+        if ((await r.json()).ok) {
+          Object.keys(logged).forEach(function (k) { logged[k] = logged[k].filter(function (s) { return s.id !== id; }); });
+        }
+      } catch (err) {}
+      render();
+    }
+    else if (act === 'done') {
+      var reps = parseInt(document.getElementById('rIn').value, 10);
+      var wEl = document.getElementById('wIn');
+      var weight = wEl ? parseFloat(String(wEl.value).replace(',', '.')) : p.weight_kg;
+      var err = document.getElementById('err');
+      if (!(reps >= 0) || !(weight >= 0)) { err.textContent = 'Enter the reps and weight as numbers.'; err.hidden = false; return; }
+      b.disabled = true;
+      try {
+        var res = await fetch('/api/strength/session/' + SESSION + '/set', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key: p.key, reps: reps, weight: weight })
+        });
+        var d = await res.json();
+        if (!d.ok) throw new Error(d.error || 'save failed');
+        logged[p.key].push({ id: d.set.id, reps: d.set.reps, weight: d.set.weight_kg });
+      } catch (ex) {
+        err.textContent = "Couldn't save the set. Check the app is running and try again.";
+        err.hidden = false; b.disabled = false; return;
+      }
+      // Rest: between sets of this exercise, or between exercises.
+      var finishedEx = logged[p.key].length >= setsFor(p);
+      var rest = finishedEx ? REST_BETWEEN : p.rest_s;
+      state.lastKey = p.key;
+      save(state);
+      if (current() < 0 || rest <= 0) render();
+      else startRest(rest, nextLabel(), finishedEx ? p.key : null);
+    }
+  });
+
+  // "Finish" in the header: ask once before ending early.
+  var early = document.getElementById('finishEarly'), armed = false;
+  if (early) early.addEventListener('click', function (e) {
+    if (current() < 0 || armed) return;
+    e.preventDefault();
+    armed = true;
+    early.textContent = 'Tap again to finish';
+  });
+
+  render();
+})();
+</script>
+{% endif %}
+{% endblock %}

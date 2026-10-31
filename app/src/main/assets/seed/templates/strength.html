@@ -1,0 +1,313 @@
+{% extends 'base.html' %}
+{% block title %}Strength · Hector{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="/static/strength.css">
+
+{% macro spark(values) %}
+  {% if values|length > 1 %}
+    {% set lo = values|min %}{% set hi = values|max %}{% set span = (hi - lo) or 1 %}
+    {% set n = values|length - 1 %}
+    <svg class="st-spark" viewBox="0 0 120 34" preserveAspectRatio="none" aria-hidden="true">
+      <polyline points="{% for v in values %}{{ (loop.index0 / n * 116 + 2)|round(1) }},{{ (30 - (v - lo) / span * 26)|round(1) }} {% endfor %}"></polyline>
+      <circle cx="118" cy="{{ (30 - (values[-1] - lo) / span * 26)|round(1) }}" r="2.5"></circle>
+    </svg>
+  {% endif %}
+{% endmacro %}
+
+<div class="mx-auto" style="max-width:860px">
+
+  {# ── Header + start ──────────────────────────────────────────────────────── #}
+  <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+    <h4 class="fw-bold mb-0"><i class="bi bi-lightning-charge me-2 st-accent"></i>Strength training</h4>
+    {% if s.open_session %}
+      <a class="btn btn-primary" href="/strength/session/{{ s.open_session.id }}"><i class="bi bi-play-fill me-1"></i>Resume workout</a>
+    {% elif s.is_training_day and not s.done_today %}
+      <form method="post" action="/strength/start"><button class="btn btn-primary"><i class="bi bi-play-fill me-1"></i>Start workout</button></form>
+    {% elif s.is_training_day and s.done_today %}
+      <form method="post" action="/strength/start" class="d-flex align-items-center gap-2">
+        <span class="text-success small"><i class="bi bi-check-circle-fill me-1"></i>Done today</span>
+        <button class="btn btn-sm btn-outline-secondary">Start another</button>
+      </form>
+    {% else %}
+      {# Rest day: allowed, but the first tap explains why it's a rest day. #}
+      <form method="post" action="/strength/start" class="text-end rest-day-start">
+        <button type="submit" class="btn btn-outline-secondary"><i class="bi bi-play-fill me-1"></i>Start workout</button>
+        <div class="small text-secondary mt-1">{% if s.next_day %}Next workout: {{ s.next_day }}{% else %}No training days set{% endif %}</div>
+        <div class="small text-warning mt-1 rest-day-warning" hidden>
+          Today is a rest day. Your workouts are on {{ s.day_list or 'no days yet' }}, and the days between let your muscles recover.
+          Tap again to start anyway.
+        </div>
+      </form>
+    {% endif %}
+  </div>
+
+  {# ── This week ───────────────────────────────────────────────────────────── #}
+  <div class="card mb-3"><div class="card-body">
+    <div class="d-flex justify-content-between align-items-baseline mb-2">
+      <h6 class="mb-0 fw-semibold">This week</h6>
+      <span class="small text-secondary">Monday to Sunday</span>
+    </div>
+    <div class="st-grid">
+      <div class="st-stat"><div class="v">{{ s.week.sessions }}<span class="text-secondary fs-6"> / {{ s.planned }}</span></div><div class="l">Workouts</div></div>
+      <div class="st-stat"><div class="v">{{ '{:,}'.format(s.week.volume) }} <span class="fs-6 text-secondary">kg</span></div>
+        <div class="l">Lifted
+          {% if s.change_pct is not none %}· <span class="{{ 'st-up' if s.change_pct >= 0 else 'st-down' }}">{{ '+' if s.change_pct >= 0 }}{{ s.change_pct }}%</span> vs last week{% endif %}
+        </div></div>
+      <div class="st-stat"><div class="v">{{ s.week.sets }}</div><div class="l">Sets</div></div>
+      <div class="st-stat"><div class="v">{{ '{:,}'.format(s.week.reps) }}</div><div class="l">Reps</div></div>
+      <div class="st-stat"><div class="v">{{ s.streak }}</div><div class="l">Full weeks in a row</div></div>
+    </div>
+    <div class="small text-secondary mt-2">
+      All time: {{ s.total_sessions }} workout{{ '' if s.total_sessions == 1 else 's' }} ·
+      {{ '{:,}'.format(s.total_volume) }} kg lifted · {{ '{:,}'.format(s.total_reps) }} reps
+      {% if s.last_week %}· last week {{ '{:,}'.format(s.last_week.volume) }} kg in {{ s.last_week.sessions }} workout{{ '' if s.last_week.sessions == 1 else 's' }}{% endif %}
+    </div>
+  </div></div>
+
+  {# ── Weekly volume chart ─────────────────────────────────────────────────── #}
+  <div class="card mb-3"><div class="card-body">
+    <h6 class="fw-semibold mb-1">Kg lifted per week</h6>
+    <div class="small text-secondary mb-2">Weight × reps for every set, split by exercise. Rollouts aren't counted.</div>
+    <div style="position:relative;height:220px"><canvas id="volChart"></canvas></div>
+  </div></div>
+
+  {# ── Progress per exercise ───────────────────────────────────────────────── #}
+  <div class="card mb-3"><div class="card-body">
+    <h6 class="fw-semibold mb-1">Progress by exercise</h6>
+    <div class="small text-secondary mb-3">
+      Strength is the <span class="text-body-emphasis">estimated 1-rep max</span> (e1RM), so 40 kg × 8 and 45 kg × 5 compare fairly.
+      For rollouts it's your best set of reps.
+    </div>
+    <div class="d-flex flex-column gap-3">
+      {% for e in s.exercises %}
+      <div class="border-bottom pb-3" style="border-color:var(--hx-border)!important">
+        <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap">
+          <div style="min-width:0">
+            <div class="fw-semibold">{{ e.name }}</div>
+            <div class="small text-secondary">
+              Plan: {{ e.plan.sets }} × {{ e.plan.reps }}{% if e.track == 'load' %} @ {{ e.plan.weight_kg|kg }} kg{% endif %}
+              {% if e.last %}· last: {{ e.last.date|relative_time }}{% endif %}
+            </div>
+          </div>
+          {% if e.ready %}
+          <form method="post" action="/strength/plan/{{ e.key }}/bump" class="d-flex align-items-center gap-2">
+            <span class="small text-success"><i class="bi bi-arrow-up-circle-fill me-1"></i>All sets done last time</span>
+            <button class="btn btn-sm btn-outline-success">Go to {{ e.next_weight|kg }} kg</button>
+          </form>
+          {% endif %}
+        </div>
+        {% if e.last %}
+        <div class="row g-2 mt-1 align-items-center">
+          <div class="col-6 col-md-3"><div class="small text-secondary">Last top set</div>
+            <div class="st-num fw-semibold">{% if e.track == 'load' %}{{ e.last.top_weight|kg }} kg × {{ e.last.top_reps }}{% else %}{{ e.last.max_reps }} reps{% endif %}</div></div>
+          <div class="col-6 col-md-3"><div class="small text-secondary">{{ 'Best e1RM' if e.track == 'load' else 'Best set' }}</div>
+            <div class="st-num fw-semibold">{{ e.best_metric|kg }}{{ ' kg' if e.track == 'load' else ' reps' }}
+              {% if e.gain_pct is not none and e.sessions > 1 %}<span class="small {{ 'st-up' if e.gain_pct >= 0 else 'st-down' }}">{{ '+' if e.gain_pct >= 0 }}{{ e.gain_pct }}%</span>{% endif %}</div></div>
+          <div class="col-6 col-md-3"><div class="small text-secondary">This week · all time</div>
+            <div class="st-num fw-semibold">{% if e.track == 'load' %}{{ '{:,}'.format(e.week_volume) }} · {{ '{:,}'.format(e.total_volume) }} kg{% else %}{{ e.week_reps }} reps{% endif %}</div></div>
+          <div class="col-6 col-md-3">{{ spark(e.metric) }}
+            <div class="small text-secondary text-end">{{ e.sessions }} workout{{ '' if e.sessions == 1 else 's' }}</div></div>
+        </div>
+        {% else %}
+        <div class="small text-secondary mt-1">Not done yet.</div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    <div class="mt-3">
+      <label for="exChartPick" class="small text-secondary me-2">Strength over time</label>
+      <select id="exChartPick" class="form-select form-select-sm d-inline-block w-auto">
+        {% for e in s.exercises %}<option value="{{ loop.index0 }}">{{ e.name }}</option>{% endfor %}
+      </select>
+      <div style="position:relative;height:200px" class="mt-2"><canvas id="exChart"></canvas></div>
+      <div id="exChartEmpty" class="small text-secondary" hidden>No workouts with this exercise yet.</div>
+    </div>
+  </div></div>
+
+  {# ── Recent workouts ─────────────────────────────────────────────────────── #}
+  <div class="card mb-3"><div class="card-body">
+    <h6 class="fw-semibold mb-2">Recent workouts</h6>
+    {% if s.recent %}
+    <div class="list-group list-group-flush">
+      {% for r in s.recent %}
+      <a href="/strength/session/{{ r.id }}" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center px-0" style="background:transparent">
+        <div>
+          <div class="fw-semibold">{{ r.day }}{% if not r.finished %} <span class="badge text-bg-warning ms-1">in progress</span>{% endif %}</div>
+          <div class="small text-secondary">{{ r.exercises }} exercise{{ '' if r.exercises == 1 else 's' }} · {{ r.sets }} sets · {{ r.reps }} reps{% if r.minutes is not none %} · {{ r.minutes }} min{% endif %}</div>
+        </div>
+        <div class="st-num fw-semibold">{{ '{:,}'.format(r.volume) }} kg <i class="bi bi-chevron-right text-secondary small"></i></div>
+      </a>
+      {% endfor %}
+    </div>
+    {% else %}
+      <div class="text-secondary small">No workouts yet. Your first one shows up here once you log a set.</div>
+    {% endif %}
+  </div></div>
+
+  {# ── Plan settings ───────────────────────────────────────────────────────── #}
+  <div class="card mb-3" id="plan"><div class="card-body">
+    <h6 class="fw-semibold mb-1">Your plan</h6>
+    <div class="small text-secondary mb-3">Targets the guided workout starts from. You can still change reps and weight set by set while training.</div>
+    <form method="post" action="/strength/plan">
+      <div class="table-responsive">
+        <table class="table table-sm align-middle mb-2" style="min-width:560px">
+          <thead><tr><th>Exercise</th><th>Sets</th><th>Reps</th><th>Weight kg</th><th>Rest between sets (s)</th><th>Add when ready (kg)</th></tr></thead>
+          <tbody>
+            {% for p in s.plan %}
+            <tr>
+              <td class="fw-semibold">{{ p.name }}</td>
+              <td><input class="form-control form-control-sm" style="width:64px" type="number" min="1" max="10" name="sets_{{ p.key }}" id="sets_{{ p.key }}" value="{{ p.sets }}"></td>
+              <td><input class="form-control form-control-sm" style="width:64px" type="number" min="1" max="50" name="reps_{{ p.key }}" id="reps_{{ p.key }}" value="{{ p.reps }}"></td>
+              <td><input class="form-control form-control-sm" style="width:84px" type="number" min="0" step="0.5" inputmode="decimal" name="weight_{{ p.key }}" id="weight_{{ p.key }}" value="{{ p.weight_kg|kg }}"></td>
+              <td><input class="form-control form-control-sm" style="width:84px" type="number" min="0" max="900" step="15" name="rest_{{ p.key }}" id="rest_{{ p.key }}" value="{{ p.rest_s }}"></td>
+              <td><input class="form-control form-control-sm" style="width:72px" type="number" min="0" step="0.5" inputmode="decimal" name="inc_{{ p.key }}" id="inc_{{ p.key }}" value="{{ p.increment_kg|kg }}"></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="d-flex flex-wrap align-items-center gap-3 mb-3">
+        <label for="rest_between" class="small">Rest between exercises (s)</label>
+        <input class="form-control form-control-sm" style="width:84px" type="number" min="0" max="900" step="15" name="rest_between" id="rest_between" value="{{ s.rest_between }}">
+      </div>
+      <div class="small mb-1">Training days</div>
+      <div class="d-flex flex-wrap gap-3 mb-3">
+        {% for name in s.day_names %}
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" name="day_{{ loop.index0 }}" id="day_{{ loop.index0 }}" {% if loop.index0 in s.days %}checked{% endif %}>
+          <label class="form-check-label" for="day_{{ loop.index0 }}">{{ name[:3] }}</label>
+        </div>
+        {% endfor %}
+      </div>
+      <button class="btn btn-primary btn-sm">Save plan</button>
+    </form>
+  </div></div>
+
+  {# ── How to do each exercise ─────────────────────────────────────────────── #}
+  <div class="card mb-3"><div class="card-body">
+    <h6 class="fw-semibold mb-1">How to do each exercise</h6>
+    <div class="small text-secondary mb-3">Tap a demo to pause it.</div>
+    <div class="row g-3 small mb-3">
+      <div class="col-md-6"><div class="fw-semibold mb-1">Warm up (8 min)</div>
+        5 min brisk walk or marching, then 10 bodyweight squats, 10 hip hinges and 10 arm circles each way.
+        Before the first lift: empty bar × 8, about half your work weight × 5, then about three quarters × 3.</div>
+      <div class="col-md-6"><div class="fw-semibold mb-1">Choose and add weight</div>
+        Weeks 1–2: practise the movements with light weights. Then use a weight where you could do 2 more reps.
+        When you finish every set at the target reps, add the "add when ready" amount next time.</div>
+      <div class="col-md-6"><div class="fw-semibold mb-1">Brace on every rep</div>
+        Breathe into your belly and tighten your stomach as if you are about to be punched. Keep your back flat and the bar close.
+        Stop if you feel sharp pain, as opposed to muscle burn.</div>
+      <div class="col-md-6"><div class="fw-semibold mb-1">Small plates?</div>
+        Picking the bar up from the floor assumes full-size 45 cm plates. With smaller ones, raise the bar on blocks to mid-shin.</div>
+    </div>
+    <div class="d-flex flex-column gap-3" id="howto">
+      {% for key in ['clean'] + s.plan|map(attribute='key')|list %}
+      <div class="row g-3 align-items-start border-top pt-3" style="border-color:var(--hx-border)!important" data-howto="{{ key }}">
+        <div class="col-md-5"><div class="howto-demo"></div></div>
+        <div class="col-md-7">
+          <div class="fw-semibold mb-1 howto-name"></div>
+          <ol class="st-cues howto-steps"></ol>
+          <div class="st-mistake mt-2 howto-mistake"></div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div></div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/strength_demo.js"></script>
+<script>
+// Starting on a rest day takes two taps: the first shows the warning.
+document.querySelectorAll('.rest-day-start').forEach(function (form) {
+  form.addEventListener('submit', function (e) {
+    var warn = form.querySelector('.rest-day-warning');
+    if (warn.hidden) {
+      e.preventDefault();
+      warn.hidden = false;
+      form.querySelector('button').innerHTML = '<i class="bi bi-play-fill me-1"></i>Start anyway';
+    }
+  });
+});
+</script>
+<script>
+(function () {
+  // Exercise guides.
+  document.querySelectorAll('[data-howto]').forEach(function (row) {
+    var key = row.dataset.howto, info = HectorDemo.info[key];
+    if (!info) { row.remove(); return; }
+    row.querySelector('.howto-name').textContent = info.name + (key === 'clean' ? ' (for front squat and overhead press)' : '');
+    row.querySelector('.howto-steps').innerHTML = info.steps.map(function (s) { return '<li></li>'; }).join('');
+    row.querySelectorAll('.howto-steps li').forEach(function (li, i) { li.textContent = info.steps[i]; });
+    row.querySelector('.howto-mistake').textContent = 'Avoid: ' + info.mistake;
+    HectorDemo.mount(row.querySelector('.howto-demo'), key);
+  });
+
+  if (typeof Chart === 'undefined') return;  // offline: charts need the CDN
+  var css = getComputedStyle(document.documentElement);
+  var grid = css.getPropertyValue('--hx-border').trim() || '#30363d';
+  var text = '#8b949e';
+  Chart.defaults.color = text;
+  Chart.defaults.font.size = 11;
+
+  var weeks = {{ s.weeks | tojson }};
+  var exercises = {{ s.exercises | tojson }};
+  var palette = ['#db61a2', '#388bfd', '#3fb950', '#d29922', '#a371f7', '#f0883e'];
+  var loadEx = exercises.filter(function (e) { return e.track === 'load'; });
+  new Chart(document.getElementById('volChart'), {
+    type: 'bar',
+    data: {
+      labels: weeks.map(function (w) { return w.label; }),
+      datasets: loadEx.map(function (e, i) {
+        return { label: e.name, data: weeks.map(function (w) { return w.by_ex[e.key] || 0; }),
+                 backgroundColor: palette[i % palette.length], borderRadius: 3, stack: 'v' };
+      })
+    },
+    options: {
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'bottom', labels: { boxWidth: 10 } },
+        tooltip: { callbacks: {
+          footer: function (items) {
+            var w = weeks[items[0].dataIndex];
+            return 'Total ' + w.volume.toLocaleString('en-US') + ' kg · ' + w.sessions + ' workout' + (w.sessions === 1 ? '' : 's');
+          },
+          label: function (c) { return c.dataset.label + ': ' + c.parsed.y.toLocaleString('en-US') + ' kg'; }
+        } }
+      },
+      scales: {
+        x: { stacked: true, grid: { display: false } },
+        y: { stacked: true, beginAtZero: true, grid: { color: grid },
+             ticks: { callback: function (v) { return v.toLocaleString('en-US'); } } }
+      }
+    }
+  });
+
+  var exChart = null;
+  var pick = document.getElementById('exChartPick');
+  function drawEx() {
+    var e = exercises[+pick.value], h = e.history;
+    document.getElementById('exChartEmpty').hidden = h.length > 0;
+    if (exChart) exChart.destroy();
+    exChart = new Chart(document.getElementById('exChart'), {
+      type: 'line',
+      data: {
+        labels: h.map(function (p) { return p.date.slice(5); }),
+        datasets: [{ label: e.track === 'load' ? 'e1RM (kg)' : 'Best set (reps)', data: h.map(function (p) { return p.value; }),
+                     borderColor: '#db61a2', backgroundColor: 'rgba(219,97,162,.15)', fill: true, tension: .25, pointRadius: 3 }]
+      },
+      options: {
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false },
+          tooltip: { callbacks: { afterLabel: function (c) { return 'Top set: ' + h[c.dataIndex].top + (e.track === 'load' ? ' kg' : ''); } } } },
+        scales: { x: { grid: { display: false } }, y: { grid: { color: grid } } }
+      }
+    });
+  }
+  pick.addEventListener('change', drawEx);
+  drawEx();
+})();
+</script>
+{% endblock %}

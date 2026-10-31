@@ -298,6 +298,46 @@ def init_db():
         CREATE TABLE IF NOT EXISTS walk_breaks (
             minute INTEGER PRIMARY KEY
         );
+
+        -- Strength training (see strength.py). The plan: one row per exercise
+        -- with its targets, in workout order. `track` is 'load' (weight × reps
+        -- counts as lifted volume) or 'reps' (bodyweight-style, e.g. rollouts).
+        CREATE TABLE IF NOT EXISTS strength_exercises (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            key         TEXT NOT NULL UNIQUE,
+            name        TEXT NOT NULL,
+            position    INTEGER NOT NULL DEFAULT 0,
+            sets        INTEGER NOT NULL DEFAULT 3,
+            reps        INTEGER NOT NULL DEFAULT 8,
+            weight_kg   REAL NOT NULL DEFAULT 20,
+            rest_s      INTEGER NOT NULL DEFAULT 120,
+            increment_kg REAL NOT NULL DEFAULT 2.5,
+            track       TEXT NOT NULL DEFAULT 'load'
+        );
+        -- One row per workout; finished_at stays NULL while it's in progress.
+        CREATE TABLE IF NOT EXISTS strength_sessions (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            date        TEXT NOT NULL,
+            started_at  TEXT NOT NULL,
+            finished_at TEXT
+        );
+        -- Every set done. The exercise is stored by key and name, and the
+        -- plan's targets at the time are kept, so history survives plan edits.
+        CREATE TABLE IF NOT EXISTS strength_sets (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id    INTEGER NOT NULL REFERENCES strength_sessions(id) ON DELETE CASCADE,
+            exercise_key  TEXT NOT NULL,
+            exercise_name TEXT NOT NULL,
+            track         TEXT NOT NULL DEFAULT 'load',
+            set_no        INTEGER NOT NULL,
+            reps          INTEGER NOT NULL,
+            weight_kg     REAL NOT NULL DEFAULT 0,
+            target_reps   INTEGER,
+            target_weight REAL,
+            logged_at     TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_strength_sets_session ON strength_sets(session_id);
+        CREATE INDEX IF NOT EXISTS idx_strength_sessions_date ON strength_sessions(date);
     ''')
     conn.commit()
 

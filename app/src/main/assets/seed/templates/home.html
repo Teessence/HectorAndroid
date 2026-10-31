@@ -216,6 +216,62 @@
       <div class="hx-bar"><i id="hyd_bar" style="width:{{ [hyd_pct, 100]|min }}%"></i></div>
     </div>
   </div>
+
+  {# ── Strength training tile ────────────────────────────────────────────── #}
+  {# Always this week (Mon–Sun), whatever period is picked above. #}
+  {% set st = strength %}
+  <div class="card hx-tile mb-3" style="--accent:#db61a2">
+    <div class="card-body">
+      <div class="d-flex justify-content-between align-items-center gap-2">
+        <a class="hx-tile-label hx-tile-link" href="/strength"><i class="bi bi-lightning-charge me-1"></i>Strength training<i class="bi bi-chevron-right hx-open"></i></a>
+        {% if st.open_session %}
+          <a class="btn btn-sm btn-primary py-0" href="/strength/session/{{ st.open_session.id }}">Resume</a>
+        {% elif st.is_training_day and not st.done_today %}
+          <form method="post" action="/strength/start"><button class="btn btn-sm btn-primary py-0">Start workout</button></form>
+        {% elif st.done_today %}
+          <span class="small text-success"><i class="bi bi-check-circle-fill me-1"></i>Done today</span>
+        {% else %}
+          {# Rest day: starting is allowed, after a warning on the first tap. #}
+          <form method="post" action="/strength/start" class="d-flex align-items-center gap-2" id="restDayStart">
+            {% if st.next_day %}<span class="hx-sub mt-0">Next: {{ st.next_day }}</span>{% endif %}
+            <button class="btn btn-sm btn-outline-secondary py-0">Start</button>
+          </form>
+        {% endif %}
+      </div>
+      <div class="small text-warning mt-1" id="restDayWarning" hidden>
+        Today is a rest day. Your workouts are on {{ st.day_list or 'no days yet' }}, and the days between let your muscles recover. Tap Start again to train anyway.
+      </div>
+      <div class="d-flex justify-content-between align-items-baseline mt-1">
+        <div class="hx-big">{{ st.week.sessions }} <span class="hx-of">/ {{ st.planned }} workouts this week</span></div>
+        {% if st.streak %}<span class="hx-pct" title="Weeks in a row with every workout done">{{ st.streak }} wk streak</span>{% endif %}
+      </div>
+      <div class="hx-bar"><i style="width:{{ [st.week.sessions / st.planned * 100 if st.planned else 0, 100]|min }}%"></i></div>
+      <div class="hx-sub">
+        {{ '{:,}'.format(st.week.volume) }} kg lifted
+        {% if st.change_pct is not none %}<span style="color:{{ '#3fb950' if st.change_pct >= 0 else '#f85149' }}">({{ '+' if st.change_pct >= 0 }}{{ st.change_pct }}% vs last week)</span>{% endif %}
+        · {{ st.week.sets }} sets · {{ '{:,}'.format(st.week.reps) }} reps
+      </div>
+      {% if st.total_sessions %}
+      <div class="mt-2" style="font-size:.8rem">
+        {% for e in st.exercises if e.last %}
+        <div class="d-flex justify-content-between gap-2 py-1" style="border-top:1px solid var(--hx-border)">
+          <span class="text-secondary text-truncate">{{ e.name }}</span>
+          <span class="text-nowrap" style="font-variant-numeric:tabular-nums">
+            {% if e.track == 'load' %}{{ e.last.top_weight|kg }} kg × {{ e.last.top_reps }}{% else %}{{ e.last.max_reps }} reps{% endif %}
+            {% if e.gain_pct is not none and e.sessions > 1 %}
+              <span style="color:{{ '#3fb950' if e.gain_pct >= 0 else '#f85149' }}"><i class="bi {{ 'bi-arrow-up-short' if e.gain_pct >= 0 else 'bi-arrow-down-short' }}"></i>{{ e.gain_pct|abs }}%</span>
+            {% endif %}
+            {% if e.ready %}<i class="bi bi-arrow-up-circle-fill text-success ms-1" title="Ready for {{ e.next_weight|kg }} kg"></i>{% endif %}
+          </span>
+        </div>
+        {% endfor %}
+        <div class="hx-sub">Arrows: strength change since your first workout · <i class="bi bi-arrow-up-circle-fill text-success"></i> ready to add weight</div>
+      </div>
+      {% else %}
+      <div class="hx-sub">No workouts yet. Your plan: {{ st.plan|length }} exercises, {{ st.planned }} days a week.</div>
+      {% endif %}
+    </div>
+  </div>
   {% endif %}
 
   {# ── Nutrition / Vitamins / Minerals tiles ─────────────────────────────── #}
@@ -349,6 +405,13 @@
       }
       syncEye(tile);
     }, true);  // capture: decides before the number's own click handler
+  });
+
+  // Strength tile: starting on a rest day takes two taps; the first warns.
+  var restStart = document.getElementById('restDayStart');
+  if (restStart) restStart.addEventListener('submit', function (e) {
+    var warn = document.getElementById('restDayWarning');
+    if (warn.hidden) { e.preventDefault(); warn.hidden = false; }
   });
 
   // Click a number to show what it means.

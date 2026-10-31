@@ -1,0 +1,33 @@
+/* Strength training pages: exercise demos and shared bits. */
+:root { --st-accent: #db61a2; --st-plate: #388bfd; }
+[data-bs-theme="light"] { --st-accent: #bf3989; --st-plate: #0969da; }
+
+.sd-demo { display: flex; flex-direction: column; gap: 6px; }
+.sd-views { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.sd-views figure { margin: 0; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.sd-views figcaption { text-align: center; font-size: .68rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: #8b949e; }
+.sd-views svg { width: 100%; height: auto; display: block; background: var(--hx-bg); border: 1px solid var(--hx-border); border-radius: 8px; cursor: pointer; }
+.sd-toggle { align-self: center; font-size: .78rem; color: #8b949e; background: none; border: 1px solid var(--hx-border); border-radius: 999px; padding: 1px 12px; }
+.sd-fig line { stroke: var(--hx-text); stroke-width: 7; stroke-linecap: round; }
+.sd-fig line.far { stroke: #8b949e; stroke-width: 6; }
+.sd-fig line.foot { stroke-width: 5; }
+.sd-fig line.barline { stroke: var(--st-plate); stroke-width: 4; }
+.sd-fig .head { fill: var(--hx-text); }
+.sd-fig .plate { fill: var(--st-plate); fill-opacity: .28; stroke: var(--st-plate); stroke-width: 3; }
+.sd-fig .hub { fill: var(--st-plate); }
+.sd-ground { stroke: var(--hx-border); stroke-width: 2; }
+
+.st-accent { color: var(--st-accent); }
+.st-stat { background: var(--hx-panel2); border: 1px solid var(--hx-border); border-radius: 10px; padding: .6rem .75rem; min-width: 0; }
+.st-stat .v { font-size: 1.35rem; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.st-stat .l { font-size: .72rem; color: #8b949e; text-transform: uppercase; letter-spacing: .06em; }
+.st-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: .6rem; }
+.st-up { color: #3fb950; }
+.st-down { color: #f85149; }
+.st-num { font-variant-numeric: tabular-nums; }
+.st-spark { width: 100%; height: 34px; display: block; }
+.st-spark polyline { fill: none; stroke: var(--st-accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.st-spark circle { fill: var(--st-accent); }
+.st-cues { margin: 0; padding-left: 1.2rem; font-size: .88rem; }
+.st-cues li + li { margin-top: .2rem; }
+.st-mistake { font-size: .85rem; color: #f0883e; }

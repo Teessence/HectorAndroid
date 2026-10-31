@@ -21,7 +21,7 @@
 
 {# Separate form to host the Calibrate button #}
 <form id="calibrate-form" method="post" action="/settings/calibrate"
-      onsubmit="return confirm('Wipe ALL diary entries, steps, weights, walks and hydration and start fresh from {{ s.starting_date or '—' }} at {{ s.starting_weight or '—' }} kg?\n\nIngredients, recipes, inventory, notes and settings will be kept.\n\nThis cannot be undone.');"></form>
+      onsubmit="return confirm('Wipe ALL diary entries, steps, weights, walks, hydration and workouts and start fresh from {{ s.starting_date or '—' }} at {{ s.starting_weight or '—' }} kg?\n\nIngredients, recipes, inventory, notes, your workout plan and settings will be kept.\n\nThis cannot be undone.');"></form>
 
 <ul class="nav nav-tabs settings-tabs" role="tablist">
   <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#set-profile"   type="button"><i class="bi bi-person me-1"></i>Profile</button></li>
@@ -438,9 +438,9 @@
       </h6>
       <p class="text-secondary mb-3" style="font-size:.85rem">
         Wipes <strong>all diary entries</strong> (and meal notes), <strong>all daily steps and weights</strong>,
-        <strong>all walks</strong> and <strong>all hydration</strong>,
+        <strong>all walks</strong>, <strong>all hydration</strong> and <strong>all logged workouts</strong>,
         then seeds your current <em>starting date</em> and <em>starting weight</em> as the new baseline.
-        <strong class="text-body-emphasis">Ingredients, recipes, inventory, notes and settings are kept.</strong>
+        <strong class="text-body-emphasis">Ingredients, recipes, inventory, notes, your workout plan and settings are kept.</strong>
         This cannot be undone.
       </p>
       <button type="submit" form="calibrate-form" class="btn btn-outline-danger">
